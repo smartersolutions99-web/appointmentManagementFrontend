@@ -1,0 +1,54 @@
+name: salon_management
+description: "Aplikacija za upravljanje frizerskim salonom."
+# Sprječava slučajno objavljivanje paketa na pub.dev.
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ---- Mrežni sloj (komunikacija sa serverom) ----
+  dio: ^5.7.0 # HTTP klijent
+  # Verzija je zaključana na 4.4.x: novije (4.9+) uvode opciju koju stari
+  # generator ne podržava, pa generisanje koda puca. Ova kombinacija radi.
+  retrofit: ">=4.4.0 <4.5.0" # Generiše API pozive iz anotacija
+  pretty_dio_logger: ^1.4.0 # Lijepo ispisuje mrežne zahtjeve u konzoli
+
+  # ---- Upravljanje stanjem (state management) ----
+  flutter_riverpod: ^2.6.1 # Riverpod za dijeljenje stanja kroz aplikaciju
+
+  # ---- Modeli podataka (immutable klase) ----
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # ---- Navigacija ----
+  go_router: ^14.6.2 # Deklarativni router (rute aplikacije)
+
+  # ---- Sigurno čuvanje tokena ----
+  flutter_secure_storage: ^9.2.2 # Šifrovano čuvanje JWT tokena na uređaju
+
+  # ---- Pomoćne biblioteke ----
+  intl: ^0.19.0 # Formatiranje datuma i brojeva
+  cupertino_icons: ^1.0.8
+  fl_chart: ^0.69.0 # Grafikoni (pita, stubičasti) za izvještaje
+  path_provider: ^2.1.0 # Pristup folderima (Downloads) za desktop export
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+  # ---- Alati za generisanje koda (build_runner) ----
+  build_runner: ^2.4.13
+  freezed: ^2.5.7 # Generiše kod za Freezed modele
+  json_serializable: ^6.9.0 # Generiše fromJson/toJson
+  retrofit_generator: ">=9.1.0 <9.3.0" # Generiše implementaciju API servisa (usklađeno sa retrofit 4.4.x)
+
+flutter:
+  uses-material-design: true

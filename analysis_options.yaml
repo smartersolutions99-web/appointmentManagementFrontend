@@ -1,0 +1,21 @@
+# Pravila za analizu i provjeru koda (linter).
+# Pomažu da kod bude čist i bez čestih grešaka.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    # Generisani fajlovi (.g.dart i .freezed.dart) se ne provjeravaju.
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    # Upozorenja umjesto grešaka za neke stvari kako bi se lakše učilo.
+    invalid_annotation_target: ignore
+    # Namjerno koristimo starije nazive (npr. `value`, `withOpacity`) da bi kod
+    # radio i na Flutteru 3.24. Na novijim verzijama su označeni kao zastarjeli,
+    # ali i dalje rade — pa ignorišemo to upozorenje da analiza bude čista.
+    deprecated_member_use: ignore
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_final_locals: true

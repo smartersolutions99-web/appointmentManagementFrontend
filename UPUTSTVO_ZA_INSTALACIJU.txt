@@ -1,0 +1,67 @@
+============================================================
+   SALON MENADŽMENT — UPUTSTVO ZA INSTALACIJU
+============================================================
+
+Hvala što koristite aplikaciju Salon Menadžment!
+Instalacija traje manje od jednog minuta. Pratite korake ispod.
+
+
+-------------------------------------------------------
+KORAK 1 — Pokrenite instalaciju
+-------------------------------------------------------
+Dvaput kliknite na fajl:
+
+    SalonMenadzment-Setup.exe
+
+
+-------------------------------------------------------
+KORAK 2 — Ako se pojavi plavi ekran (Windows zaštita)
+-------------------------------------------------------
+Windows ponekad prikaže plavi prozor sa porukom:
+"Windows protected your PC" (Windows je zaštitio vaš računar).
+
+Ovo je NORMALNO i aplikacija je bezbjedna. Uradite ovo:
+
+   1. Kliknite na "More info" (Više informacija)
+   2. Kliknite na dugme "Run anyway" (Svejedno pokreni)
+
+Napomena: ovo se dešava samo zato što aplikacija nije
+"digitalno potpisana" — ne znači da je opasna.
+
+
+-------------------------------------------------------
+KORAK 3 — Završite instalaciju
+-------------------------------------------------------
+   - Pratite korake u prozoru (dugme "Next" / "Dalje")
+   - Po želji označite "Napravi precicu na radnoj povrsini"
+   - Kliknite "Install" pa "Finish"
+
+Instalacija NE traži administratorsku lozinku.
+
+
+-------------------------------------------------------
+KORAK 4 — Pokrenite aplikaciju
+-------------------------------------------------------
+Otvorite aplikaciju preko:
+   - prečice na radnoj površini (ako ste je napravili), ili
+   - Start meni  ->  "Salon Menadzment"
+
+Pri prvom pokretanju prijavite se svojim korisničkim
+imenom i lozinkom.
+
+
+-------------------------------------------------------
+POTREBNO
+-------------------------------------------------------
+   - Windows 10 ili 11 (64-bit)
+   - Internet konekcija (aplikacija se povezuje na server)
+
+
+-------------------------------------------------------
+PODRŠKA
+-------------------------------------------------------
+Za pomoć oko instalacije ili korišćenja, kontaktirajte:
+
+   [ovdje upišite svoj kontakt — telefon / email ]
+
+============================================================
