@@ -18,7 +18,7 @@ class ProductRequest with _$ProductRequest {
       _$ProductRequestFromJson(json);
 }
 
-/// Proizvod kako ga vraća server.
+/// Proizvod kako ga vraća server (uključuje trenutnu zalihu i naziv dobavljača).
 @freezed
 class ProductResponse with _$ProductResponse {
   const factory ProductResponse({
@@ -27,11 +27,44 @@ class ProductResponse with _$ProductResponse {
     double? price,
     double? finalPrice,
     int? supplierId,
+    String? supplierName,
     String? description,
+    int? sellingPlaceId,
+    int? quantity, // trenutna zaliha (mijenja se samo kroz nabavke/prodaje)
   }) = _ProductResponse;
 
   factory ProductResponse.fromJson(Map<String, dynamic> json) =>
       _$ProductResponseFromJson(json);
+}
+
+/// Jedna stranica proizvoda (paginacija) — GET /api/products.
+@freezed
+class PageProductResponse with _$PageProductResponse {
+  const factory PageProductResponse({
+    @Default([]) List<ProductResponse> content,
+    @Default(0) int totalPages,
+    @Default(0) int totalElements,
+    @Default(0) int number,
+    @Default(true) bool last,
+  }) = _PageProductResponse;
+
+  factory PageProductResponse.fromJson(Map<String, dynamic> json) =>
+      _$PageProductResponseFromJson(json);
+}
+
+/// Stavka sa malom zalihom — GET /api/products/low-stock.
+@freezed
+class LowStockItem with _$LowStockItem {
+  const factory LowStockItem({
+    int? productId,
+    String? name,
+    int? quantity,
+    int? supplierId,
+    String? supplierName,
+  }) = _LowStockItem;
+
+  factory LowStockItem.fromJson(Map<String, dynamic> json) =>
+      _$LowStockItemFromJson(json);
 }
 
 /// Dobavljač — koristi se za padajuću listu pri unosu proizvoda.
@@ -72,14 +105,6 @@ class PageSupplierResponse with _$PageSupplierResponse {
     @Default(true) bool last,
   }) = _PageSupplierResponse;
 
-  /// Tolerantno na oblik odgovora: `content` je obično lista, ali ako backend
-  /// vrati objekat (mapu), pretvorimo njegove vrijednosti u listu da parsiranje
-  /// ne pukne. (Privremeno — dok ne potvrdimo tačan oblik sa backenda.)
-  factory PageSupplierResponse.fromJson(Map<String, dynamic> json) {
-    final content = json['content'];
-    if (content is Map) {
-      json = {...json, 'content': content.values.toList()};
-    }
-    return _$PageSupplierResponseFromJson(json);
-  }
+  factory PageSupplierResponse.fromJson(Map<String, dynamic> json) =>
+      _$PageSupplierResponseFromJson(json);
 }

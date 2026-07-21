@@ -26,6 +26,7 @@ class _EmployeeFormState extends State<EmployeeForm> {
   late final TextEditingController _password;
   late final TextEditingController _phone;
   late final TextEditingController _email;
+  late final TextEditingController _duration;
 
   int? _roleId;
   int? _sellingPlaceId;
@@ -39,6 +40,8 @@ class _EmployeeFormState extends State<EmployeeForm> {
     _password = TextEditingController();
     _phone = TextEditingController(text: e?.phoneNumber ?? '');
     _email = TextEditingController(text: e?.email ?? '');
+    _duration = TextEditingController(
+        text: e?.defaultAppointmentDuration?.toString() ?? '');
     _roleId = e?.roleId;
     _sellingPlaceId = e?.sellingPlaceId;
   }
@@ -50,6 +53,7 @@ class _EmployeeFormState extends State<EmployeeForm> {
     _password.dispose();
     _phone.dispose();
     _email.dispose();
+    _duration.dispose();
     super.dispose();
   }
 
@@ -65,6 +69,10 @@ class _EmployeeFormState extends State<EmployeeForm> {
       sellingPlaceId: _sellingPlaceId,
       phoneNumber: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
       email: _email.text.trim().isEmpty ? null : _email.text.trim(),
+      // Prazno → null (server zadržava/postavlja svoju podrazumijevanu vrijednost).
+      defaultAppointmentDuration: _duration.text.trim().isEmpty
+          ? null
+          : int.tryParse(_duration.text.trim()),
     );
     Navigator.pop(context, request);
   }
@@ -150,6 +158,23 @@ class _EmployeeFormState extends State<EmployeeForm> {
                 TextFormField(
                   controller: _email,
                   decoration: const InputDecoration(labelText: 'Email'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _duration,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Trajanje termina (min)',
+                    helperText:
+                        'Na koliko minuta se dijeli raspored pri zakazivanju (npr. 30).',
+                  ),
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.isEmpty) return null; // opciono
+                    final n = int.tryParse(t);
+                    if (n == null || n < 1) return 'Unesite broj minuta (≥ 1)';
+                    return null;
+                  },
                 ),
               ],
             ),

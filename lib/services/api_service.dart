@@ -94,10 +94,24 @@ abstract class ApiService {
   @DELETE('/api/services/{id}')
   Future<void> deleteService(@Path('id') int id);
 
-  // ----------------------- PROIZVODI -----------------------
+  // ----------------------- PROIZVODI (paginacija + CRUD) -----------------------
 
   @GET('/api/products')
-  Future<List<ProductResponse>> getProducts();
+  Future<PageProductResponse> getProducts({
+    @Query('name') String? name,
+    @Query('supplierId') int? supplierId,
+    @Query('page') required int page,
+    @Query('size') required int size,
+    @Query('sort') String? sort,
+  });
+
+  @GET('/api/products/{id}')
+  Future<ProductResponse> getProduct(@Path('id') int id);
+
+  @GET('/api/products/low-stock')
+  Future<List<LowStockItem>> getLowStock({
+    @Query('threshold') required int threshold,
+  });
 
   @POST('/api/products')
   Future<ProductResponse> createProduct(@Body() ProductRequest body);
@@ -135,6 +149,43 @@ abstract class ApiService {
 
   @DELETE('/api/suppliers/{id}')
   Future<void> deleteSupplier(@Path('id') int id);
+
+  // ----------------------- NABAVKE (stock-in) -----------------------
+
+  @GET('/api/purchases')
+  Future<PagePurchaseResponse> getPurchases({
+    @Query('supplierId') int? supplierId,
+    @Query('from') String? from,
+    @Query('to') String? to,
+    @Query('page') required int page,
+    @Query('size') required int size,
+    @Query('sort') String? sort,
+  });
+
+  @GET('/api/purchases/{id}')
+  Future<PurchaseResponse> getPurchase(@Path('id') int id);
+
+  @POST('/api/purchases')
+  Future<PurchaseResponse> createPurchase(@Body() PurchaseRequest body);
+
+  // ----------------------- PRODAJE (POS / stock-out) -----------------------
+
+  @GET('/api/sales')
+  Future<PageSaleResponse> getSales({
+    @Query('employeeId') int? employeeId, // samo ADMIN smije filtrirati po drugom
+    @Query('isInternal') bool? isInternal,
+    @Query('from') String? from,
+    @Query('to') String? to,
+    @Query('page') required int page,
+    @Query('size') required int size,
+    @Query('sort') String? sort,
+  });
+
+  @GET('/api/sales/{id}')
+  Future<SaleResponse> getSale(@Path('id') int id);
+
+  @POST('/api/sales')
+  Future<SaleResponse> createSale(@Body() SaleRequest body);
 
   // ----------------------- ULOGE / PRODAJNA MJESTA (za padajuće liste) -----------------------
 
@@ -177,6 +228,76 @@ abstract class ApiService {
     @Path('id') int id,
     @Body() StatusChangeRequest body,
   );
+
+  // ----------------------- ŠABLONSKE SMJENE (paginacija + CRUD) -----------------------
+
+  @GET('/api/shift-templates')
+  Future<PageShiftTemplateResponse> getShiftTemplates({
+    @Query('name') String? name,
+    @Query('page') required int page,
+    @Query('size') required int size,
+    @Query('sort') String? sort,
+  });
+
+  @GET('/api/shift-templates/{id}')
+  Future<ShiftTemplateResponse> getShiftTemplate(@Path('id') int id);
+
+  @POST('/api/shift-templates')
+  Future<ShiftTemplateResponse> createShiftTemplate(
+      @Body() ShiftTemplateRequest body);
+
+  @PUT('/api/shift-templates/{id}')
+  Future<ShiftTemplateResponse> updateShiftTemplate(
+    @Path('id') int id,
+    @Body() ShiftTemplateRequest body,
+  );
+
+  @DELETE('/api/shift-templates/{id}')
+  Future<void> deleteShiftTemplate(@Path('id') int id);
+
+  // ----------------------- DODJELA SMJENA -----------------------
+
+  @GET('/api/shift-assignments')
+  Future<List<ShiftAssignmentResponse>> getShiftAssignments({
+    @Query('from') String? from, // "YYYY-MM-DD"
+    @Query('to') String? to,
+  });
+
+  @GET('/api/shift-assignments/{id}')
+  Future<ShiftAssignmentResponse> getShiftAssignment(@Path('id') int id);
+
+  @POST('/api/shift-assignments')
+  Future<ShiftAssignmentResponse> createShiftAssignment(
+      @Body() ShiftAssignmentRequest body);
+
+  @PUT('/api/shift-assignments/{id}')
+  Future<ShiftAssignmentResponse> updateShiftAssignment(
+    @Path('id') int id,
+    @Body() ShiftAssignmentRequest body,
+  );
+
+  @DELETE('/api/shift-assignments/{id}')
+  Future<void> deleteShiftAssignment(@Path('id') int id);
+
+  // ----------------------- RADNO VRIJEME -----------------------
+
+  @GET('/api/working-hours')
+  Future<List<WorkingHoursResponse>> getWorkingHours();
+
+  /// Zamjena cijele sedmice: dani u nizu se upisuju, dani kojih nema se brišu
+  /// (= salon zatvoren tog dana). Prazan niz = zatvoreno svih dana.
+  @PUT('/api/working-hours')
+  Future<List<WorkingHoursResponse>> replaceWorkingHours(
+      @Body() List<WorkingHoursRequest> body);
+
+  // ----------------------- RASPORED (kalendar) -----------------------
+
+  @GET('/api/schedule')
+  Future<List<ScheduleDayResponse>> getSchedule({
+    @Query('employeeId') int? employeeId, // izostavi → server uzima svoj id
+    @Query('from') required String from, // "YYYY-MM-DD"
+    @Query('to') required String to,
+  });
 
   // ----------------------- IZVJEŠTAJI -----------------------
 

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../services/api_service.dart';
 import '../../shared/format.dart';
+import 'customer_autocomplete.dart';
 
 /// Forma za kreiranje novog termina.
 ///
@@ -12,6 +14,9 @@ Future<AppointmentRequest?> showAppointmentForm(
   required bool isAdmin,
   int? currentEmployeeId,
   required List<EmployeeResponse> employees,
+  DateTime? initialStart,
+  required ApiService api, // rezerva za našaptavanje (ako adresar nije učitan)
+  required List<CustomerResponse> customers, // adresar za našaptavanje klijenata
 }) {
   final formKey = GlobalKey<FormState>();
   final customerName = TextEditingController();
@@ -19,12 +24,21 @@ Future<AppointmentRequest?> showAppointmentForm(
   final duration = TextEditingController(text: '30'); // podrazumijevano 30 min
   final price = TextEditingController();
   final note = TextEditingController();
+  // Popunjava se kad se klijent izabere iz liste našaptavanja (pretraga po
+  // telefonu vraća i id). Server tada veže termin za postojećeg klijenta.
+  int? customerId;
 
   // Admin bira zaposlenog iz liste; običnom zaposlenom je „zakucan“ njegov nalog.
   int? employeeId = isAdmin ? null : currentEmployeeId;
-  // Početno vrijeme: sljedeći puni sat.
-  DateTime startTime = DateTime.now().add(const Duration(hours: 1));
-  startTime = DateTime(startTime.year, startTime.month, startTime.day, startTime.hour);
+  // Početno vrijeme: zadato (npr. za „vanredni“ termin na izabrani dan) ili,
+  // ako nije zadato, sljedeći puni sat.
+  DateTime startTime;
+  if (initialStart != null) {
+    startTime = initialStart;
+  } else {
+    final t = DateTime.now().add(const Duration(hours: 1));
+    startTime = DateTime(t.year, t.month, t.day, t.hour);
+  }
 
   return showDialog<AppointmentRequest>(
     context: context,
@@ -85,16 +99,24 @@ Future<AppointmentRequest?> showAppointmentForm(
                       ),
                       const SizedBox(height: 12),
                     ],
-                    TextFormField(
+                    CustomerAutocompleteField(
+                      api: api,
+                      directory: customers,
                       controller: customerName,
-                      decoration:
-                          const InputDecoration(labelText: 'Ime klijenta'),
+                      otherController: phone,
+                      label: 'Ime klijenta',
+                      byPhone: false,
+                      onCustomerSelected: (id) => customerId = id,
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
+                    CustomerAutocompleteField(
+                      api: api,
+                      directory: customers,
                       controller: phone,
-                      decoration:
-                          const InputDecoration(labelText: 'Telefon klijenta'),
+                      otherController: customerName,
+                      label: 'Telefon klijenta',
+                      byPhone: true,
+                      onCustomerSelected: (id) => customerId = id,
                     ),
                     const SizedBox(height: 12),
                     // Prikaz izabranog vremena + dugme za izmjenu.
@@ -157,6 +179,7 @@ Future<AppointmentRequest?> showAppointmentForm(
                   context,
                   AppointmentRequest(
                     employeeId: employeeId,
+                    customerId: customerId,
                     customerName: customerName.text.trim().isEmpty
                         ? null
                         : customerName.text.trim(),

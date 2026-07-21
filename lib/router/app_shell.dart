@@ -21,11 +21,24 @@ const _allItems = <_NavItem>[
   _NavItem(Routes.appointments, Icons.event_outlined, 'Termini'),
   _NavItem(Routes.customers, Icons.people_outline, 'Klijenti'),
   _NavItem(Routes.suppliers, Icons.local_shipping_outlined, 'Dobavljači'),
+  _NavItem(Routes.purchases, Icons.inventory_outlined, 'Nabavke'),
+  _NavItem(Routes.sales, Icons.point_of_sale, 'Prodaje'),
   _NavItem(Routes.employees, Icons.badge_outlined, 'Zaposleni', adminOnly: true),
   _NavItem(Routes.services, Icons.content_cut, 'Usluge', adminOnly: true),
-  _NavItem(Routes.products, Icons.inventory_2_outlined, 'Proizvodi', adminOnly: true),
+  _NavItem(Routes.workingHours, Icons.access_time, 'Radno vrijeme',
+      adminOnly: true),
+  _NavItem(Routes.shiftTemplates, Icons.calendar_view_week, 'Šabloni smjena',
+      adminOnly: true),
+  _NavItem(Routes.shiftAssignments, Icons.assignment_ind_outlined,
+      'Dodjela smjena',
+      adminOnly: true),
+  _NavItem(Routes.products, Icons.inventory_2_outlined, 'Proizvodi'),
   _NavItem(Routes.reports, Icons.bar_chart_outlined, 'Izvještaji', adminOnly: true),
 ];
+
+/// Da li je bočni meni proširen (ikonice + tekst) ili skupljen (samo ikonice).
+/// Čuvamo ga u provideru da izbor ostane zapamćen dok se krećemo kroz ekrane.
+final railExtendedProvider = StateProvider<bool>((ref) => true);
 
 /// Zajednički „okvir“ oko svih glavnih ekrana: bočni meni + naslovna traka.
 ///
@@ -68,21 +81,45 @@ class AppShell extends ConsumerWidget {
     );
 
     if (isWide) {
+      // Da li je bočna traka trenutno proširena (tekst uz ikonice).
+      final isExtended = ref.watch(railExtendedProvider);
+
       return Scaffold(
         body: Row(
           children: [
             NavigationRail(
-              extended: MediaQuery.sizeOf(context).width >= 1100,
+              extended: isExtended,
               selectedIndex: selectedIndex,
               onDestinationSelected: onSelect,
-              leading: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Icon(Icons.cut, size: 32),
+              // Vrh trake: logo + dugme za skupljanje/proširenje menija.
+              leading: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Icon(Icons.cut, size: 32),
+                  ),
+                  IconButton(
+                    tooltip: isExtended ? 'Skupi meni' : 'Proširi meni',
+                    icon: Icon(isExtended ? Icons.menu_open : Icons.menu),
+                    onPressed: () => ref
+                        .read(railExtendedProvider.notifier)
+                        .state = !isExtended,
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
               destinations: [
                 for (final item in items)
                   NavigationRailDestination(
-                    icon: Icon(item.icon),
+                    // Kad je traka skupljena, vidi se samo ikonica — pa na hover
+                    // preko ikonice pokazujemo tooltip sa nazivom stavke.
+                    // Kad je proširena, naziv već stoji pored, pa tooltip ne treba.
+                    icon: isExtended
+                        ? Icon(item.icon)
+                        : Tooltip(
+                            message: item.label,
+                            child: Icon(item.icon),
+                          ),
                     label: Text(item.label),
                   ),
               ],

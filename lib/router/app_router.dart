@@ -7,8 +7,13 @@ import '../features/customers/customers_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/employees/employees_screen.dart';
 import '../features/products/products_screen.dart';
+import '../features/purchases/purchases_screen.dart';
 import '../features/reports/reports_screen.dart';
+import '../features/sales/sales_screen.dart';
 import '../features/services/services_screen.dart';
+import '../features/shifts/shift_assignments_screen.dart';
+import '../features/shifts/shift_templates_screen.dart';
+import '../features/shifts/working_hours_screen.dart';
 import '../features/suppliers/suppliers_screen.dart';
 import '../services/auth_controller.dart';
 import '../services/providers.dart';
@@ -23,7 +28,12 @@ class Routes {
   static const services = '/services';
   static const products = '/products';
   static const suppliers = '/suppliers';
+  static const purchases = '/purchases';
+  static const sales = '/sales';
   static const appointments = '/appointments';
+  static const workingHours = '/working-hours';
+  static const shiftTemplates = '/shift-templates';
+  static const shiftAssignments = '/shift-assignments';
   static const reports = '/reports';
 }
 
@@ -57,7 +67,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final adminOnly = {
         Routes.employees,
         Routes.services,
-        Routes.products,
+        Routes.workingHours,
+        Routes.shiftTemplates,
+        Routes.shiftAssignments,
         Routes.reports,
       };
       if (!auth.isAdmin && adminOnly.contains(state.matchedLocation)) {
@@ -103,8 +115,28 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const SuppliersScreen(),
           ),
           GoRoute(
+            path: Routes.purchases,
+            builder: (context, state) => const PurchasesScreen(),
+          ),
+          GoRoute(
+            path: Routes.sales,
+            builder: (context, state) => const SalesScreen(),
+          ),
+          GoRoute(
             path: Routes.appointments,
             builder: (context, state) => const AppointmentsScreen(),
+          ),
+          GoRoute(
+            path: Routes.workingHours,
+            builder: (context, state) => const WorkingHoursScreen(),
+          ),
+          GoRoute(
+            path: Routes.shiftTemplates,
+            builder: (context, state) => const ShiftTemplatesScreen(),
+          ),
+          GoRoute(
+            path: Routes.shiftAssignments,
+            builder: (context, state) => const ShiftAssignmentsScreen(),
           ),
           GoRoute(
             path: Routes.reports,

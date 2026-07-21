@@ -90,14 +90,20 @@ class AsyncValueView<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return value.when(
-      loading: () => const LoadingView(),
-      error: (error, _) => ErrorView(
-        message: error.toString(),
+    // Ako VEĆ imamo podatke, prikazujemo ih čak i dok se u pozadini osvježavaju
+    // (npr. poslije zakazivanja ili promjene statusa). Time izbjegavamo „bljesak"
+    // — trenutak kad se cijeli ekran zamijeni vrtićem pa se vrati. Vrtić i grešku
+    // pokazujemo samo pri PRVOM učitavanju (kad još nemamo ništa da prikažemo).
+    if (value.hasValue) {
+      return data(value.requireValue);
+    }
+    if (value.hasError) {
+      return ErrorView(
+        message: value.error.toString(),
         onRetry: onRetry,
-      ),
-      data: data,
-    );
+      );
+    }
+    return const LoadingView();
   }
 }
 

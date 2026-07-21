@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Pristup internetu — potreban da aplikacija priča sa serverom (Railway).
+         Debug build ovo dodaje sam, ali za release APK mora stajati ovdje. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="salon_management"
+        android:label="BarberSS"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

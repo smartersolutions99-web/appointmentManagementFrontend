@@ -50,5 +50,24 @@ dev_dependencies:
   json_serializable: ^6.9.0 # Generiše fromJson/toJson
   retrofit_generator: ">=9.1.0 <9.3.0" # Generiše implementaciju API servisa (usklađeno sa retrofit 4.4.x)
 
+  # ---- Generisanje ikone aplikacije (iz assets/icon/app_icon.png) ----
+  # Pokreni:  dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.1
+
 flutter:
   uses-material-design: true
+
+# Podešavanja ikone aplikacije (barberske makaze na brend-ljubičastoj podlozi).
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  # Android adaptivna ikona: providne makaze na ljubičastoj podlozi.
+  adaptive_icon_background: "#6750A4"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  remove_alpha_ios: true
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 256

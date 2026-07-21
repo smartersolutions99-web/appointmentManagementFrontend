@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../services/api_service.dart';
 import '../../shared/format.dart';
+import 'customer_autocomplete.dart';
 
 /// Forma koja se otvara nakon što se u rasporedu izaberu slobodna polja.
 ///
@@ -13,12 +15,17 @@ Future<AppointmentRequest?> showSlotBookingForm(
   required int durationMinutes,
   required int? employeeId,
   required List<ServiceEntityResponse> services,
+  required ApiService api, // rezerva za našaptavanje (ako adresar nije učitan)
+  required List<CustomerResponse> customers, // adresar za našaptavanje klijenata
 }) {
   final formKey = GlobalKey<FormState>();
   final name = TextEditingController();
   final phone = TextEditingController();
   final price = TextEditingController();
   int? serviceId;
+  // Popunjava se kad se klijent izabere iz liste našaptavanja (pretraga po
+  // telefonu vraća i id). Server tada veže termin za postojećeg klijenta.
+  int? customerId;
 
   final endTime = startTime.add(Duration(minutes: durationMinutes));
 
@@ -51,16 +58,24 @@ Future<AppointmentRequest?> showSlotBookingForm(
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  TextFormField(
+                  CustomerAutocompleteField(
+                    api: api,
+                    directory: customers,
                     controller: name,
-                    decoration:
-                        const InputDecoration(labelText: 'Ime i prezime'),
+                    otherController: phone,
+                    label: 'Ime i prezime',
+                    byPhone: false,
+                    onCustomerSelected: (id) => customerId = id,
                   ),
                   const SizedBox(height: 12),
-                  TextFormField(
+                  CustomerAutocompleteField(
+                    api: api,
+                    directory: customers,
                     controller: phone,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: 'Telefon'),
+                    otherController: name,
+                    label: 'Telefon',
+                    byPhone: true,
+                    onCustomerSelected: (id) => customerId = id,
                   ),
                   const SizedBox(height: 12),
                   // Izbor usluge — kad se izabere, automatski popuni cijenu.
@@ -123,6 +138,7 @@ Future<AppointmentRequest?> showSlotBookingForm(
                 AppointmentRequest(
                   employeeId: employeeId,
                   serviceId: serviceId,
+                  customerId: customerId,
                   customerName:
                       name.text.trim().isEmpty ? null : name.text.trim(),
                   customerPhone:

@@ -15,6 +15,7 @@ class EmployeeRequest with _$EmployeeRequest {
     double? rating,
     String? phoneNumber,
     String? email,
+    int? defaultAppointmentDuration, // podrazumijevano trajanje termina (min)
   }) = _EmployeeRequest;
 
   factory EmployeeRequest.fromJson(Map<String, dynamic> json) =>
@@ -33,6 +34,7 @@ class EmployeeResponse with _$EmployeeResponse {
     double? rating,
     String? phoneNumber,
     String? email,
+    int? defaultAppointmentDuration, // podrazumijevano trajanje termina (min)
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _EmployeeResponse;
