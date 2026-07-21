@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "rm -rf flutter-sdk && git clone https://github.com/flutter/flutter.git --depth 1 --branch 3.44.2 flutter-sdk",
+  "buildCommand": "flutter-sdk/bin/flutter pub get && flutter-sdk/bin/dart run build_runner build --delete-conflicting-outputs && flutter-sdk/bin/flutter build web --release",
+  "outputDirectory": "build/web",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://appointmentmanagement-production-543b.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
