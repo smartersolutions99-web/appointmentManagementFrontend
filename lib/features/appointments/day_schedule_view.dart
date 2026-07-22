@@ -713,92 +713,131 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
       }
     }
 
+    // Kratak datum za uske ekrane (dd.MM.) — bez godine, da stane na telefonu.
+    final shortDate =
+        '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.';
+
     return Material(
       color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
       child: SizedBox(
         height: 48,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            children: [
-              // Navigacija dana.
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                tooltip: 'Prethodni dan',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _shiftDay(-1),
-              ),
-              TextButton.icon(
-                icon: const Icon(Icons.calendar_today, size: 18),
-                label: Text('$dayLabel, ${Format.date(date)}'),
-                onPressed: _pickDate,
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                tooltip: 'Sljedeći dan',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _shiftDay(1),
-              ),
-              // Ime barbera kad se gleda pojedinačni raspored.
-              if (barberName != null) ...[
-                const SizedBox(width: 6),
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: barberColor(ref.read(scheduleEmployeeProvider)),
-                    borderRadius: BorderRadius.circular(3),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Uski ekran (telefon): sažimamo — kratak datum, „Filteri" kao ikona,
+            // zoom bez procenta, bez cijelog ekrana i imena barbera. Tako sve stane.
+            final compact = constraints.maxWidth < 560;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Row(
+                children: [
+                  // Lijeva grupa [‹ datum › (barber)] — u Expanded-u da popuni
+                  // preostali prostor (desne kontrole ostaju uz desnu ivicu i
+                  // NIKAD se ne prelijeju izvan ekrana na telefonu).
+                  Expanded(
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left),
+                          tooltip: 'Prethodni dan',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _shiftDay(-1),
+                        ),
+                        TextButton.icon(
+                          icon: const Icon(Icons.calendar_today, size: 18),
+                          label: Text(
+                            compact
+                                ? shortDate
+                                : '$dayLabel, ${Format.date(date)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onPressed: _pickDate,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right),
+                          tooltip: 'Sljedeći dan',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _shiftDay(1),
+                        ),
+                        // Ime barbera — samo na širem ekranu (na uskom nema mjesta).
+                        if (!compact && barberName != null) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: barberColor(
+                                  ref.read(scheduleEmployeeProvider)),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              barberName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    barberName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-              const Spacer(),
-              // Zoom kontrole (Excel-stil).
-              _buildZoomCluster(),
-              const SizedBox(width: 4),
-              // Dugme koje otvara/zatvara „Filteri" panel.
-              TextButton.icon(
-                onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
-                icon: Icon(_filtersOpen ? Icons.expand_less : Icons.tune,
-                    size: 18),
-                label: const Text('Filteri'),
+                  // Zoom kontrole (na uskom bez procenta — samo − i +).
+                  _buildZoomCluster(compact),
+                  // „Filteri": ikona na uskom, tekst + cijeli ekran na širokom.
+                  if (compact)
+                    IconButton(
+                      icon:
+                          Icon(_filtersOpen ? Icons.expand_less : Icons.tune),
+                      tooltip: 'Filteri',
+                      onPressed: () =>
+                          setState(() => _filtersOpen = !_filtersOpen),
+                    )
+                  else ...[
+                    const SizedBox(width: 4),
+                    TextButton.icon(
+                      onPressed: () =>
+                          setState(() => _filtersOpen = !_filtersOpen),
+                      icon: Icon(_filtersOpen ? Icons.expand_less : Icons.tune,
+                          size: 18),
+                      label: const Text('Filteri'),
+                    ),
+                    IconButton(
+                      icon: Icon(widget.fullScreen
+                          ? Icons.fullscreen_exit
+                          : Icons.fullscreen),
+                      tooltip: widget.fullScreen
+                          ? 'Zatvori cijeli ekran'
+                          : 'Cijeli ekran',
+                      onPressed: () {
+                        if (widget.fullScreen) {
+                          Navigator.of(context).maybePop();
+                        } else {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const DayScheduleView(fullScreen: true),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ],
               ),
-              // Ulaz/izlaz iz cijelog ekrana (jedna traka i u punom ekranu).
-              IconButton(
-                icon: Icon(widget.fullScreen
-                    ? Icons.fullscreen_exit
-                    : Icons.fullscreen),
-                tooltip:
-                    widget.fullScreen ? 'Zatvori cijeli ekran' : 'Cijeli ekran',
-                onPressed: () {
-                  if (widget.fullScreen) {
-                    Navigator.of(context).maybePop();
-                  } else {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const DayScheduleView(fullScreen: true),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
 
-  /// Zoom klaster: [−] procenat [+]. Tap na procenat vraća na 100%.
-  Widget _buildZoomCluster() {
+  /// Zoom klaster: [−] (procenat) [+]. Tap na procenat vraća na 100%.
+  /// Na uskom ekranu ([compact]) izostavljamo procenat da uštedimo prostor.
+  Widget _buildZoomCluster(bool compact) {
     final theme = Theme.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -809,24 +848,25 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
           visualDensity: VisualDensity.compact,
           onPressed: _z <= kMinZoom ? null : () => _zoomBy(-kZoomStep),
         ),
-        // Tap na procenat = reset na 100%.
-        Tooltip(
-          message: 'Vrati na 100%',
-          child: InkWell(
-            onTap: _resetZoom,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: Text(
-                '${(_z * 100).round()}%',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurfaceVariant,
+        // Procenat (tap = reset na 100%) — skrivamo ga na uskom ekranu.
+        if (!compact)
+          Tooltip(
+            message: 'Vrati na 100%',
+            child: InkWell(
+              onTap: _resetZoom,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Text(
+                  '${(_z * 100).round()}%',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
         IconButton(
           icon: const Icon(Icons.add, size: 18),
           tooltip: 'Uvećaj',
@@ -1147,7 +1187,8 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     const headerH = 40.0; // visina zaglavlja kolona
     const footerH = 50.0; // visina footera (broj termina + zarada)
     const minColW = 120.0; // ispod ove širine → horizontalni skrol
-    const minCellH = 14.0; // najmanja visina slota (da tekst ostane čitljiv-ish)
+    const minCellH = 14.0; // apsolutni minimum (dozvoljen tek kad se zumira napolje)
+    const readableCellH = 26.0; // čitljiva osnova: oznaka vremena + red stanu
 
     // Najduža kolona (najviše slotova) — po njoj računamo „uklapanje" cijelog dana.
     var maxRows = 1;
@@ -1161,11 +1202,15 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
         // Visina koju ima TIJELO (bez zaglavlja i footera).
         final bodyH = (constraints.maxHeight - headerH - footerH)
             .clamp(0.0, double.infinity);
-        // Auto-uklapanje: podijeli visinu tijela na broj redova pa pomnoži zoomom.
-        // Na zoom 1.0 cijeli dan stane; zoom > 1 uvećava (pa se skroluje).
-        final fitCellH = maxRows > 0 ? bodyH / maxRows : minCellH;
+        // Auto-uklapanje: podijeli visinu tijela na broj redova. Ali NE ispod
+        // čitljive granice — inače na dugačkim danima (npr. prošli dan sa širokim
+        // okvirom) ćelije postanu nečitljivo sitne i oznake vremena nestanu.
+        // Preko granice se skroluje. Zoom skalira osnovu (zoom − može i sitnije,
+        // ako korisnik baš želi da sve stane bez skrola).
+        final fitCellH = maxRows > 0 ? bodyH / maxRows : readableCellH;
+        final baseCellH = fitCellH < readableCellH ? readableCellH : fitCellH;
         final cellH =
-            (fitCellH * _z).clamp(minCellH, double.infinity).toDouble();
+            (baseCellH * _z).clamp(minCellH, double.infinity).toDouble();
 
         // Širina kolone: podijeli ravnomjerno; ako je preusko — min širina + skrol.
         final fits = ids.length * minColW <= constraints.maxWidth;

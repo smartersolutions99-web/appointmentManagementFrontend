@@ -673,19 +673,25 @@ final allDayScheduleProvider =
     final mine = apptsByBarber[id] ?? const <AppointmentResponse>[];
     final sched = boardShifts[id];
 
-    // Okvir kolone (minuti od ponoći): smjena za današnji/buduće dane, za prošle
-    // dane podrazumijevani 08–21. Bez smjene danas/ubuduće → samo oko termina.
+    // Okvir kolone (minuti od ponoći):
+    //  1) smjena barbera za taj dan (ako je poznata — vrijedi i za prošle dane);
+    //  2) ako smjene nema → radno vrijeme salona za taj dan;
+    //  3) ako ni to nije poznato → ostaje prazno pa se okvir svede na termine.
+    // (Ranije su prošli dani koristili fiksni 08–21, što je davalo pretrpan,
+    //  uglavnom prazan prikaz sa nečitljivo sitnim ćelijama.)
     int? winStart;
     int? winEnd;
-    if (isPast) {
-      winStart = _defaultStartMin;
-      winEnd = _defaultEndMin;
+    final shStart = _minutesOfDay(sched?.shiftStart);
+    final shEnd = _minutesOfDay(sched?.shiftEnd);
+    if (shStart != null && shEnd != null && shEnd > shStart) {
+      winStart = shStart;
+      winEnd = shEnd;
     } else {
-      final shStart = _minutesOfDay(sched?.shiftStart);
-      final shEnd = _minutesOfDay(sched?.shiftEnd);
-      if (shStart != null && shEnd != null && shEnd > shStart) {
-        winStart = shStart;
-        winEnd = shEnd;
+      final soStart = _minutesOfDay(salon?.opensAt);
+      final soEnd = _minutesOfDay(salon?.closesAt);
+      if (soStart != null && soEnd != null && soEnd > soStart) {
+        winStart = soStart;
+        winEnd = soEnd;
       }
     }
 
@@ -764,18 +770,14 @@ final allDayScheduleProvider =
 });
 
 /// Smjene SVIH barbera za izabrani dan — da u „Pregled" prikazu svaka kolona
-/// pokaže samo satnicu u okviru smjene tog barbera (van smjene zasjenčimo).
-///
-/// Za prošle dane vraća praznu mapu (tada ne ograničavamo prikaz). Greške po
-/// pojedinom barberu se tiho preskaču — prikaz radi i sa djelimičnim podacima.
+/// pokaže satnicu u okviru smjene tog barbera. Radi i za PROŠLE dane (server
+/// vrati istorijsku smjenu ako je ima; ako ne, kolona pada na radno vrijeme
+/// salona). Greške po pojedinom barberu se tiho preskaču — prikaz radi i sa
+/// djelimičnim podacima.
 final boardShiftsProvider =
     FutureProvider.autoDispose<Map<int, ScheduleDayResponse>>((ref) async {
   final api = ref.watch(apiServiceProvider);
   final dayStart = ref.watch(scheduleDateProvider);
-  final now = DateTime.now();
-  if (dayStart.isBefore(DateTime(now.year, now.month, now.day))) {
-    return const {}; // prošlost — bez ograničenja po smjeni
-  }
 
   final employees = await ref.watch(employeesProvider.future);
   final ids = employees.map((e) => e.id).whereType<int>().toList();
