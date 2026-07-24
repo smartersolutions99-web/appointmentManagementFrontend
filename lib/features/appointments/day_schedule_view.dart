@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/exceptions.dart';
 import '../../models/models.dart';
+import '../../services/notification_service.dart';
 import '../../services/providers.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets.dart';
@@ -16,6 +17,7 @@ import 'appointment_form.dart';
 import 'appointment_search_screen.dart';
 import 'barber_colors.dart';
 import 'day_schedule_provider.dart';
+import 'reminders.dart';
 import 'slot_booking_form.dart';
 
 /// Dnevni raspored kao tabela: redovi su slotovi od 15 minuta.
@@ -188,6 +190,8 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
   void _refreshSchedules() {
     ref.invalidate(dayScheduleProvider);
     ref.invalidate(allDayScheduleProvider);
+    // Uskladi i mobilne podsjetnike (otkaži/zakaži prema novom stanju).
+    ref.invalidate(myReminderAppointmentsProvider);
   }
 
   /// Zakazivanje iz prikaza jednog barbera (koristi tekući izbor slotova).
@@ -213,6 +217,44 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
       // Trajanje = od početka prvog do kraja zadnjeg izabranog slota (po trajanju barbera).
       durationMinutes: col[hi].end.difference(col[lo].start).inMinutes,
     );
+  }
+
+  /// Označi izabrani opseg u „Pregled" tabli kao pauzu (za izabranog barbera).
+  Future<void> _markBoardBreak(AllDaySchedule schedule) async {
+    final barber = _boardBarber, lo = _boardLo, hi = _boardHi;
+    if (barber == null || lo == null || hi == null) return;
+    final col = schedule.boardColumns[barber];
+    if (col == null || lo >= col.length || hi >= col.length) return;
+
+    final start = col[lo].start;
+    final duration = col[hi].end.difference(col[lo].start).inMinutes;
+
+    final ok = await confirmDialog(
+      context,
+      title: 'Pauza',
+      message: 'Označiti izabrani period kao pauzu?',
+      confirmText: 'Pauza',
+    );
+    if (!ok) return;
+
+    final request = AppointmentRequest(
+      employeeId: barber,
+      startTime: start.toUtc(),
+      duration: duration,
+      servicePrice: 0,
+      note: kBreakNote,
+    );
+
+    try {
+      await ref.read(apiServiceProvider).createAppointment(request);
+      _clearBoardSelection();
+      _refreshSchedules();
+      if (mounted) showSnack(context, 'Pauza dodata.');
+    } catch (e) {
+      if (mounted) {
+        showSnack(context, ApiException.from(e).message, isError: true);
+      }
+    }
   }
 
   /// „Vanredni" termin za jednog barbera (dugme pored imena u „Pregled"):
@@ -496,43 +538,123 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     }
   }
 
-  /// Promjena statusa termina (Zakazan/Završen/Otkazan/Nije se pojavio).
+  /// Tap na termin: ponudi IZMJENU termina ili promjenu statusa.
   Future<void> _changeStatus(AppointmentResponse appt) async {
     final id = appt.id;
     if (id == null) return;
 
-    final selected = await showModalBottomSheet<AppointmentStatus>(
+    final result = await showModalBottomSheet<Object>(
       context: context,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Status termina',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            ),
-            for (final s in AppointmentStatus.values)
-              ListTile(
-                leading: Icon(_statusIcon(s)),
-                title: Text(s.label),
-                trailing: appt.status == s
-                    ? const Icon(Icons.check, color: Colors.green)
-                    : null,
-                onTap: () => Navigator.pop(ctx, s),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Termin',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ),
-          ],
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Izmijeni termin'),
+                onTap: () => Navigator.pop(ctx, 'edit'),
+              ),
+              const Divider(height: 1),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Promijeni status',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ),
+              for (final s in AppointmentStatus.values)
+                ListTile(
+                  leading: Icon(_statusIcon(s)),
+                  title: Text(s.label),
+                  trailing: appt.status == s
+                      ? const Icon(Icons.check, color: Colors.green)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, s),
+                ),
+            ],
+          ),
         ),
       ),
     );
 
-    if (selected == null || selected == appt.status) return;
+    // Izmjena svih stavki termina.
+    if (result == 'edit') {
+      await _editAppointment(appt);
+      return;
+    }
+
+    // Promjena statusa.
+    if (result is! AppointmentStatus || result == appt.status) return;
+    final selected = result;
     try {
       await ref
           .read(apiServiceProvider)
           .changeAppointmentStatus(id, StatusChangeRequest(status: selected));
+      // Status ažuriran → odmah otkaži podsjetnik za taj termin (lokalno).
+      if (selected != AppointmentStatus.scheduled) {
+        notificationService.cancel(id);
+      }
       _refreshSchedules();
       if (mounted) showSnack(context, 'Status: ${selected.label}.');
+    } catch (e) {
+      if (mounted) {
+        showSnack(context, ApiException.from(e).message, isError: true);
+      }
+    }
+  }
+
+  /// Izmjena postojećeg termina (sve stavke): otvori formu popunjenu podacima
+  /// termina, pa pošalji PUT na server.
+  Future<void> _editAppointment(AppointmentResponse appt) async {
+    final id = appt.id;
+    if (id == null) return;
+    final auth = ref.read(authControllerProvider);
+
+    // Usluge (za padajući izbor) — ako ne uspije, forma radi i bez njih.
+    List<ServiceEntityResponse> services;
+    try {
+      services = await ref.read(servicesProvider.future);
+    } catch (_) {
+      services = const [];
+    }
+    // Zaposleni (da admin može promijeniti barbera).
+    List<EmployeeResponse> employees = const [];
+    if (auth.isAdmin) {
+      try {
+        employees = await ref.read(employeesProvider.future);
+      } catch (_) {}
+    }
+    final directory = await _loadCustomerDirectory();
+    if (!mounted) return;
+
+    final request = await showAppointmentForm(
+      context,
+      isAdmin: auth.isAdmin,
+      currentEmployeeId: auth.employeeId,
+      employees: employees,
+      api: ref.read(apiServiceProvider),
+      customers: directory,
+      existing: appt,
+      services: services,
+    );
+    if (request == null) return;
+
+    // Ista provjera konflikta telefona kao kod kreiranja.
+    final resolved = await _resolveCustomerConflict(request);
+    if (resolved == null) return;
+
+    try {
+      await ref.read(apiServiceProvider).updateAppointment(id, resolved);
+      _refreshSchedules();
+      if (mounted) showSnack(context, 'Termin izmijenjen.');
     } catch (e) {
       if (mounted) {
         showSnack(context, ApiException.from(e).message, isError: true);
@@ -1095,6 +1217,13 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
               child: const Icon(Icons.close),
             ),
             const SizedBox(width: 12),
+            FloatingActionButton.small(
+              heroTag: 'breakBoard',
+              onPressed: () => _markBoardBreak(allSched),
+              tooltip: 'Označi kao pauzu',
+              child: const Icon(Icons.free_breakfast_outlined),
+            ),
+            const SizedBox(width: 12),
             FloatingActionButton.extended(
               heroTag: 'bookBoard',
               onPressed: () => _bookBoard(allSched),
@@ -1188,7 +1317,7 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     const footerH = 50.0; // visina footera (broj termina + zarada)
     const minColW = 120.0; // ispod ove širine → horizontalni skrol
     const minCellH = 14.0; // apsolutni minimum (dozvoljen tek kad se zumira napolje)
-    const readableCellH = 26.0; // čitljiva osnova: oznaka vremena + red stanu
+    const readableCellH = 27.0; // čitljiva osnova (satnica + red stanu)
 
     // Najduža kolona (najviše slotova) — po njoj računamo „uklapanje" cijelog dana.
     var maxRows = 1;
@@ -1281,9 +1410,9 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     );
   }
 
-  /// Jedna kolona „Pregleda": slotovi barbera, veličine NJEGOVOG trajanja
-  /// (defaultAppointmentDuration), samo u okviru njegove smjene i poravnati na
-  /// vrh — pa smjena počinje odmah od vrha kolone.
+  /// Jedna kolona „Pregleda". Zauzeti uzastopni slotovi ISTOG termina se spajaju
+  /// u JEDAN blok (tekst se piše jednom, preko cijelog termina), a slobodni
+  /// slotovi ostaju pojedinačni (radi izbora za zakazivanje).
   Widget _boardColumn(AllDaySchedule schedule, int barberId, double cellH) {
     final col = schedule.boardColumns[barberId] ?? const <BoardSlot>[];
     if (col.isEmpty) {
@@ -1296,15 +1425,88 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
         ),
       );
     }
-    return Column(
+
+    final timeSize = (cellH * 0.38).clamp(9.0, 18.0).toDouble();
+
+    // Lijeva traka: SATNICA (jedno vrijeme po slotu, uvijek vidljiva).
+    final timeStrip = Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (var i = 0; i < col.length; i++)
-          SizedBox(
-              height: cellH,
-              child: _boardSlotCell(schedule, barberId, i, cellH)),
+        for (var k = 0; k < col.length; k++)
+          SizedBox(height: cellH, child: _boardTimeCell(col[k], timeSize)),
       ],
+    );
+
+    // Desno: spojeni blokovi termina + pojedinačni slobodni slotovi.
+    final content = <Widget>[];
+    var i = 0;
+    while (i < col.length) {
+      final entry = col[i].entry;
+      if (entry == null) {
+        // Slobodan slot — pojedinačan (klik bira slot za zakazivanje).
+        content.add(SizedBox(
+          height: cellH,
+          child: _boardFreeCell(schedule, barberId, i, cellH),
+        ));
+        i++;
+      } else {
+        // Spoji sve uzastopne slotove ISTOG termina u jedan blok.
+        var j = i + 1;
+        while (j < col.length &&
+            col[j].entry != null &&
+            identical(col[j].entry!.appointment, entry.appointment)) {
+          j++;
+        }
+        final blockH = cellH * (j - i);
+        content.add(
+            SizedBox(height: blockH, child: _boardBusyCell(entry, blockH)));
+        i = j;
+      }
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 40, child: timeStrip),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: content,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Jedna ćelija satnice (lijeva traka): vrijeme slota većim fontom; puni sati
+  /// podebljani. Uvijek vidljivo, i pored zauzetih blokova.
+  Widget _boardTimeCell(BoardSlot slot, double timeSize) {
+    final theme = Theme.of(context);
+    final isHour = slot.start.minute == 0;
+    return Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 6),
+      decoration: BoxDecoration(
+        border: Border(
+          right: BorderSide(color: theme.dividerColor),
+          bottom: BorderSide(
+            color: isHour
+                ? theme.dividerColor
+                : theme.dividerColor.withOpacity(0.3),
+          ),
+        ),
+      ),
+      child: Text(
+        Format.time(slot.start),
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        style: TextStyle(
+          fontSize: timeSize,
+          color: isHour ? theme.colorScheme.onSurface : theme.hintColor,
+          fontWeight: isHour ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
     );
   }
 
@@ -1356,163 +1558,158 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     );
   }
 
-  /// Jedna ćelija (slot) u koloni barbera. Zauzeto → obojeno po statusu, sa
-  /// podacima; tap otvara promjenu statusa. Slobodno → tap bira/za zakazivanje.
-  /// [cellH] je visina ćelije (zavisi od zooma / auto-uklapanja) — po njoj biramo
-  /// veličinu fonta i koliko linija stane.
-  Widget _boardSlotCell(
+  /// Slobodan slot u koloni barbera (pojedinačan): prazan, tap bira slot za
+  /// zakazivanje. Kad je izabran — obojen i piše „izabrano" (veći font).
+  Widget _boardFreeCell(
       AllDaySchedule schedule, int barberId, int index, double cellH) {
     final theme = Theme.of(context);
     final slot = schedule.boardColumns[barberId]![index];
     final isHour = slot.start.minute == 0;
-    final entry = slot.entry;
-
-    final border = Border(
-      right: BorderSide(color: theme.dividerColor),
-      bottom: BorderSide(
-        color:
-            isHour ? theme.dividerColor : theme.dividerColor.withOpacity(0.4),
-      ),
-    );
-
-    // Oznaka vremena slota (lijevo). Kod vrlo niskih ćelija je sakrijemo (nema mjesta).
-    final showTime = cellH >= 22;
-    final timeSize = (cellH * 0.24).clamp(7.0, 11.0).toDouble();
-    final timeLabel = showTime
-        ? SizedBox(
-            width: 34,
-            child: Text(
-              Format.time(slot.start),
-              style: TextStyle(
-                fontSize: timeSize,
-                color: isHour ? theme.colorScheme.onSurface : theme.hintColor,
-                fontWeight: isHour ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          )
-        : const SizedBox(width: 2);
-
-    if (entry != null) {
-      final busy = entry; // za korišćenje u closure-u (bez `!`)
-      final status = busy.appointment.status ?? AppointmentStatus.scheduled;
-      final bg = busy.isBreak
-          ? theme.colorScheme.surfaceContainerHighest
-          : switch (status) {
-              AppointmentStatus.completed => Colors.green.withOpacity(0.18),
-              AppointmentStatus.noShow => Colors.orange.withOpacity(0.18),
-              _ => theme.colorScheme.secondaryContainer,
-            };
-      return InkWell(
-        onTap: () => _onTapBusy(busy.appointment),
-        child: Container(
-          decoration: BoxDecoration(color: bg, border: border),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          // ClipRect — sigurnosno odsijecanje ako tekst za dlaku pređe visinu.
-          child: ClipRect(
-            child: Row(
-              children: [
-                timeLabel,
-                const SizedBox(width: 2),
-                Expanded(child: _boardBusyContent(busy, cellH)),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Slobodan slot (u okviru smjene) — bira se za zakazivanje.
     final selected = _boardIsSelected(barberId, index);
+    final labelSize = (cellH * 0.32).clamp(10.0, 14.0).toDouble();
+
     return InkWell(
       onTap: () => _onTapBoardFree(schedule, barberId, index),
       child: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: selected ? theme.colorScheme.primary.withOpacity(0.20) : null,
-          border: border,
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-        child: ClipRect(
-          child: Row(
-            children: [
-              timeLabel,
-              const SizedBox(width: 2),
-              if (selected && cellH >= 18)
-                Text('izabrano',
-                    style: TextStyle(
-                        color: theme.colorScheme.primary, fontSize: timeSize)),
-            ],
+          border: Border(
+            right: BorderSide(color: theme.dividerColor),
+            bottom: BorderSide(
+              color: isHour
+                  ? theme.dividerColor
+                  : theme.dividerColor.withOpacity(0.3),
+            ),
           ),
         ),
+        child: (selected && cellH >= 16)
+            ? Text('izabrano',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: labelSize,
+                    fontWeight: FontWeight.w600))
+            : const SizedBox.shrink(),
       ),
     );
   }
 
-  /// Sadržaj zauzetog slota u „Pregled" koloni, prilagođen visini ćelije [cellH]:
-  /// uvijek ime klijenta, pa telefon/cijena/vrijeme — onoliko linija koliko stane.
-  Widget _boardBusyContent(SlotEntry busy, double cellH) {
+  /// Zauzet BLOK (termin preko svih svojih slotova): boja po statusu; tekst
+  /// (ime / telefon / cijena · usluga) ispisan JEDNOM i vertikalno centriran.
+  /// Tap otvara promjenu statusa.
+  Widget _boardBusyCell(SlotEntry busy, double blockH) {
     final theme = Theme.of(context);
-    final nameSize = (cellH * 0.30).clamp(7.5, 13.0).toDouble();
-    final subSize = (cellH * 0.24).clamp(7.0, 11.0).toDouble();
-    const lineH = 1.1;
+    final status = busy.appointment.status ?? AppointmentStatus.scheduled;
+    final bg = busy.isBreak
+        ? theme.colorScheme.surfaceContainerHighest
+        : switch (status) {
+            AppointmentStatus.completed => Colors.green.withOpacity(0.18),
+            AppointmentStatus.noShow => Colors.orange.withOpacity(0.18),
+            _ => theme.colorScheme.secondaryContainer,
+          };
+    return InkWell(
+      onTap: () => _onTapBusy(busy.appointment),
+      child: Container(
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border(
+            right: BorderSide(color: theme.dividerColor),
+            bottom: BorderSide(color: theme.dividerColor),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: ClipRect(child: _boardBlockContent(busy, blockH)),
+      ),
+    );
+  }
+
+  /// Sadržaj zauzetog bloka, vertikalno centriran, sa KRUPNIJIM fontom:
+  ///   ime klijenta / telefon / cijena · usluga
+  /// Font je fiksan (skalira sa zoomom), ne raste sa dužinom termina. Ako je blok
+  /// nizak (kratak termin), prikaže manje linija da ne prelije.
+  Widget _boardBlockContent(SlotEntry busy, double blockH) {
+    final theme = Theme.of(context);
+    const lineH = 1.2;
+    // Raspoloživa visina (bez paddinga 8 + donjeg okvira 1).
+    final avail = blockH - 9;
+
+    // Krupniji font (~2x od ranijeg). Ako ni ime ne bi stalo u nizak blok,
+    // srazmjerno ga smanji da bar ime stane.
+    var nameSize = 14.4 * _z;
+    var subSize = 11.7 * _z;
+    if (avail > 0 && nameSize * lineH > avail) {
+      final s = avail / (nameSize * lineH);
+      nameSize *= s;
+      subSize *= s;
+    }
 
     if (busy.isBreak) {
-      return Text(
-        'Pauza',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Pauza',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
             fontStyle: FontStyle.italic,
             color: theme.hintColor,
             fontSize: nameSize,
-            height: lineH),
+            height: lineH,
+          ),
+        ),
       );
     }
 
     final name = (busy.customerName?.trim().isNotEmpty ?? false)
         ? busy.customerName!.trim()
         : 'Zauzeto';
+    final phone = busy.customerPhone?.trim();
+
+    // „cijena · usluga" (ili samo ono što postoji).
+    final price =
+        (busy.servicePrice ?? 0) > 0 ? Format.money(busy.servicePrice) : null;
+    final service = busy.serviceName?.trim();
+    final String? priceService;
+    if (price != null && service != null && service.isNotEmpty) {
+      priceService = '$price · $service';
+    } else {
+      priceService =
+          price ?? ((service != null && service.isNotEmpty) ? service : null);
+    }
+
     final subStyle =
         TextStyle(fontSize: subSize, color: theme.hintColor, height: lineH);
 
-    // Kandidati za dodatne linije, redom po važnosti (telefon, cijena, vrijeme).
-    final subs = <Widget>[];
-    final phone = busy.customerPhone?.trim();
-    if (phone != null && phone.isNotEmpty) {
-      subs.add(Text(phone,
-          maxLines: 1, overflow: TextOverflow.ellipsis, style: subStyle));
-    }
-    if ((busy.servicePrice ?? 0) > 0) {
-      subs.add(Text(Format.money(busy.servicePrice),
-          maxLines: 1, overflow: TextOverflow.ellipsis, style: subStyle));
-    }
-    if (busy.startTime != null) {
-      subs.add(Text('${Format.time(busy.startTime)} - ${Format.time(busy.endTime)}',
-          maxLines: 1, overflow: TextOverflow.ellipsis, style: subStyle));
-    }
-
-    // Koliko dodatnih linija stane pored imena (procjena po visini linije).
-    var remaining = cellH - nameSize * lineH - 2; // 2 = vertikalni padding
-    final shownSubs = <Widget>[];
-    for (final w in subs) {
-      final h = subSize * lineH;
-      if (remaining < h) break;
-      shownSubs.add(w);
-      remaining -= h;
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          name,
+    // Ime uvijek; telefon i cijena·usluga koliko stane (blok je centriran).
+    final lines = <Widget>[
+      Text(name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-              fontWeight: FontWeight.w600, fontSize: nameSize, height: lineH),
-        ),
-        ...shownSubs,
-      ],
+              fontWeight: FontWeight.w600, fontSize: nameSize, height: lineH)),
+    ];
+    var remaining = avail - nameSize * lineH;
+    final subH = subSize * lineH;
+    for (final text in [
+      if (phone != null && phone.isNotEmpty) phone,
+      if (priceService != null) priceService,
+    ]) {
+      if (remaining < subH) break;
+      lines.add(Text(text,
+          maxLines: 1, overflow: TextOverflow.ellipsis, style: subStyle));
+      remaining -= subH;
+    }
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: lines,
+      ),
     );
   }
 

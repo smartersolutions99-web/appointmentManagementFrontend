@@ -333,71 +333,105 @@ class _ShiftTemplateFormScreenState
   }
 
   /// Jedan red: prekidač (radi/ne radi) + naziv dana + vremena (od/do).
+  /// Responzivno: na uskom (telefon) vremena idu ISPOD dana (pa dobijaju punu
+  /// širinu), na širem ekranu dan je lijevo a vremena desno.
   Widget _buildDayRow(WeekDay day) {
     final d = _days[day]!;
     final theme = Theme.of(context);
 
+    final header = Row(
+      children: [
+        Checkbox(
+          value: d.enabled,
+          onChanged: (v) => setState(() => d.enabled = v ?? false),
+        ),
+        Expanded(
+          child: Text(
+            day.label,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+
+    final times = Row(
+      children: [
+        _timeButton('Od', d.start, (t) => setState(() => d.start = t)),
+        const SizedBox(width: 8),
+        _timeButton('Do', d.end, (t) => setState(() => d.end = t)),
+      ],
+    );
+
+    final free = Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text('Slobodan dan', style: TextStyle(color: theme.hintColor)),
+    );
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Row(
-          children: [
-            // Checkbox + naziv dana (fiksna širina da su vremena poravnata).
-            SizedBox(
-              width: 150,
-              child: Row(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            if (c.maxWidth < 480) {
+              // Usko: dan gore, vremena ispod (puna širina — dovoljno mjesta).
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Checkbox(
-                    value: d.enabled,
-                    onChanged: (v) => setState(() => d.enabled = v ?? false),
-                  ),
-                  Expanded(
-                    child: Text(
-                      day.label,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+                  header,
+                  if (d.enabled) ...[
+                    const SizedBox(height: 6),
+                    times,
+                  ] else
+                    Align(alignment: Alignment.centerLeft, child: free),
                 ],
-              ),
-            ),
-            // Vremena (ako radi) ili oznaka „Slobodan dan“.
-            Expanded(
-              child: d.enabled
-                  ? Row(
-                      children: [
-                        _timeButton('Od', d.start,
-                            (t) => setState(() => d.start = t)),
-                        const SizedBox(width: 8),
-                        _timeButton(
-                            'Do', d.end, (t) => setState(() => d.end = t)),
-                      ],
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Text(
-                        'Slobodan dan',
-                        style: TextStyle(color: theme.hintColor),
-                      ),
-                    ),
-            ),
-          ],
+              );
+            }
+            // Široko: dan lijevo (fiksna širina), vremena desno.
+            return Row(
+              children: [
+                SizedBox(width: 160, child: header),
+                Expanded(
+                  child: d.enabled
+                      ? times
+                      : Align(alignment: Alignment.centerLeft, child: free),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
-  /// Dugme koje otvara „sat“ i prikazuje izabrano vrijeme (npr. "Od: 09:00").
+  /// Polje vremena: mala labela ("Od") iznad, pa dugme koje pokazuje SAMO
+  /// vrijeme (npr. "09:00") i otvara „sat". Time se tekst nikad ne lomi.
   Widget _timeButton(
       String label, TimeOfDay value, ValueChanged<TimeOfDay> onPicked) {
+    final theme = Theme.of(context);
     return Expanded(
-      child: OutlinedButton.icon(
-        icon: const Icon(Icons.schedule, size: 18),
-        onPressed: () async {
-          final picked = await _pickTime(value);
-          if (picked != null) onPicked(picked);
-        },
-        label: Text('$label: ${_fmt(value)}'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label,
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.hintColor)),
+          const SizedBox(height: 2),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.schedule, size: 18),
+            style: OutlinedButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+            onPressed: () async {
+              final picked = await _pickTime(value);
+              if (picked != null) onPicked(picked);
+            },
+            label: Text(_fmt(value),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
       ),
     );
   }

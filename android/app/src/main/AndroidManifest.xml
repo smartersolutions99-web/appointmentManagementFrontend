@@ -2,6 +2,15 @@
     <!-- Pristup internetu — potreban da aplikacija priča sa serverom (Railway).
          Debug build ovo dodaje sam, ali za release APK mora stajati ovdje. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Notifikacije-podsjetnici (ažuriranje statusa termina). -->
+    <!-- Android 13+ traži eksplicitnu dozvolu za prikaz notifikacija. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Tačno zakazivanje (Android 12+) — da podsjetnik stigne u tačan minut. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <!-- Da zakazani podsjetnici prežive restart telefona. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="BarberSS"
         android:name="${applicationName}"

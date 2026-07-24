@@ -64,3 +64,22 @@ final barberTodayStatsProvider =
     nextStart: next,
   );
 });
+
+/// Današnji raspored (radno vrijeme salona + smjena) prijavljenog korisnika —
+/// za prikaz na Početnoj. Ne šaljemo `employeeId` (server ga izvuče iz JWT-a).
+/// Grešku tiho gutamo (vrati `null`) da ne sruši Početnu.
+final todayScheduleInfoProvider =
+    FutureProvider.autoDispose<ScheduleDayResponse?>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  final now = DateTime.now();
+  // Server očekuje "YYYY-MM-DD" za današnji dan.
+  final ymd = '${now.year.toString().padLeft(4, '0')}-'
+      '${now.month.toString().padLeft(2, '0')}-'
+      '${now.day.toString().padLeft(2, '0')}';
+  try {
+    final list = await api.getSchedule(from: ymd, to: ymd);
+    return list.isNotEmpty ? list.first : null;
+  } catch (_) {
+    return null;
+  }
+});

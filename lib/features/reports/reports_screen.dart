@@ -529,7 +529,7 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-/// Tabela po barberu: brojevi po statusu + prihod. Horizontalno skrolabilna.
+/// Tabela po barberu: brojevi po statusu + prihod.
 class _BarberTable extends StatelessWidget {
   final DetailedReport report;
 
@@ -537,46 +537,38 @@ class _BarberTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Barber')),
-            DataColumn(label: Text('Zakazani'), numeric: true),
-            DataColumn(label: Text('Završeni'), numeric: true),
-            DataColumn(label: Text('Otkazani'), numeric: true),
-            DataColumn(label: Text('Nije se pojavio'), numeric: true),
-            DataColumn(label: Text('Ukupno'), numeric: true),
-            DataColumn(label: Text('Prihod'), numeric: true),
+    return _ReportTable(
+      headers: const [
+        'Barber',
+        'Zakazani',
+        'Završeni',
+        'Otkazani',
+        'Nije se pojavio',
+        'Ukupno',
+        'Prihod',
+      ],
+      rows: [
+        for (final b in report.barbers)
+          [
+            b.name,
+            '${b.counts.scheduled}',
+            '${b.counts.completed}',
+            '${b.counts.cancelled}',
+            '${b.counts.noShow}',
+            '${b.counts.total}',
+            Format.money(b.revenue),
           ],
-          rows: [
-            for (final b in report.barbers)
-              DataRow(cells: [
-                DataCell(Text(b.name)),
-                DataCell(Text('${b.counts.scheduled}')),
-                DataCell(Text('${b.counts.completed}')),
-                DataCell(Text('${b.counts.cancelled}')),
-                DataCell(Text('${b.counts.noShow}')),
-                DataCell(Text('${b.counts.total}')),
-                DataCell(Text(Format.money(b.revenue))),
-              ]),
-            DataRow(cells: [
-              const DataCell(
-                  Text('UKUPNO', style: TextStyle(fontWeight: FontWeight.bold))),
-              DataCell(Text('${report.overall.scheduled}')),
-              DataCell(Text('${report.overall.completed}')),
-              DataCell(Text('${report.overall.cancelled}')),
-              DataCell(Text('${report.overall.noShow}')),
-              DataCell(Text('${report.overall.total}')),
-              DataCell(Text(
-                Format.money(report.totalRevenue),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              )),
-            ]),
-          ],
-        ),
-      ),
+        [
+          'UKUPNO',
+          '${report.overall.scheduled}',
+          '${report.overall.completed}',
+          '${report.overall.cancelled}',
+          '${report.overall.noShow}',
+          '${report.overall.total}',
+          Format.money(report.totalRevenue),
+        ],
+      ],
+      boldRows: {report.barbers.length}, // posljednji red = UKUPNO
     );
   }
 }
@@ -589,24 +581,126 @@ class _ServiceTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _ReportTable(
+      headers: const ['Usluga', 'Broj', 'Prihod'],
+      rows: [
+        for (final s in services)
+          [s.name, '${s.count}', Format.money(s.revenue)],
+      ],
+    );
+  }
+}
+
+/// Tabela izvještaja. Na uskom ekranu (telefon) prva kolona je „zamrznuta"
+/// (uvijek vidljiva) dok se ostale skroluju vodoravno; na širem ekranu je
+/// obična tabela (vodoravni skrol ako ne stane).
+class _ReportTable extends StatelessWidget {
+  final List<String> headers; // headers.first = zamrznuta kolona
+  final List<List<String>> rows; // svaki red: ćelije po redoslijedu headers
+  final Set<int> boldRows; // indeksi redova koje treba podebljati (npr. UKUPNO)
+
+  const _ReportTable({
+    required this.headers,
+    required this.rows,
+    this.boldRows = const {},
+  });
+
+  // Iste visine na obje strane → redovi poravnati kad je kolona zamrznuta.
+  static const double _headH = 48;
+  static const double _rowH = 46;
+
+  TextStyle? _style(int r) =>
+      boldRows.contains(r) ? const TextStyle(fontWeight: FontWeight.bold) : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) =>
+          c.maxWidth < 600 ? _sticky(context) : _plain(context),
+    );
+  }
+
+  /// Široko: jedna obična tabela.
+  Widget _plain(BuildContext context) {
     return Card(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Usluga')),
-            DataColumn(label: Text('Broj'), numeric: true),
-            DataColumn(label: Text('Prihod'), numeric: true),
+          columns: [
+            for (var i = 0; i < headers.length; i++)
+              DataColumn(label: Text(headers[i]), numeric: i > 0),
           ],
           rows: [
-            for (final s in services)
+            for (var r = 0; r < rows.length; r++)
               DataRow(cells: [
-                DataCell(Text(s.name)),
-                DataCell(Text('${s.count}')),
-                DataCell(Text(Format.money(s.revenue))),
+                for (var i = 0; i < headers.length; i++)
+                  DataCell(Text(rows[r][i], style: _style(r))),
               ]),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Usko: prva kolona fiksna lijevo, ostale u vodoravnom skrolu.
+  Widget _sticky(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final frozen = DataTable(
+      headingRowHeight: _headH,
+      dataRowMinHeight: _rowH,
+      dataRowMaxHeight: _rowH,
+      horizontalMargin: 12,
+      columnSpacing: 0,
+      columns: [DataColumn(label: Text(headers.first))],
+      rows: [
+        for (var r = 0; r < rows.length; r++)
+          DataRow(cells: [
+            DataCell(ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 130),
+              child: Text(rows[r].first,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _style(r)),
+            )),
+          ]),
+      ],
+    );
+
+    final scrollable = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowHeight: _headH,
+        dataRowMinHeight: _rowH,
+        dataRowMaxHeight: _rowH,
+        columns: [
+          for (var i = 1; i < headers.length; i++)
+            DataColumn(label: Text(headers[i]), numeric: true),
+        ],
+        rows: [
+          for (var r = 0; r < rows.length; r++)
+            DataRow(cells: [
+              for (var i = 1; i < headers.length; i++)
+                DataCell(Text(rows[r][i], style: _style(r))),
+            ]),
+        ],
+      ),
+    );
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Zamrznuta prva kolona + tanka linija razdvajanja.
+          DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border(right: BorderSide(color: theme.dividerColor)),
+            ),
+            child: frozen,
+          ),
+          Expanded(child: scrollable),
+        ],
       ),
     );
   }

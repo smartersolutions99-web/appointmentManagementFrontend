@@ -10,6 +10,7 @@ class TokenStorage {
   static const _refreshTokenKey = 'refresh_token';
   static const _roleKey = 'user_role';
   static const _employeeIdKey = 'employee_id';
+  static const _usernameKey = 'username';
 
   final FlutterSecureStorage _storage;
 
@@ -23,6 +24,7 @@ class TokenStorage {
     required String refreshToken,
     String? role,
     int? employeeId,
+    String? username, // upisuje se samo pri prijavi (ne pri osvježavanju tokena)
   }) async {
     await _storage.write(key: _accessTokenKey, value: accessToken);
     await _storage.write(key: _refreshTokenKey, value: refreshToken);
@@ -32,6 +34,9 @@ class TokenStorage {
     if (employeeId != null) {
       await _storage.write(key: _employeeIdKey, value: employeeId.toString());
     }
+    if (username != null) {
+      await _storage.write(key: _usernameKey, value: username);
+    }
   }
 
   Future<String?> get accessToken => _storage.read(key: _accessTokenKey);
@@ -39,6 +44,9 @@ class TokenStorage {
   Future<String?> get refreshToken => _storage.read(key: _refreshTokenKey);
 
   Future<String?> get role => _storage.read(key: _roleKey);
+
+  /// Korisničko ime prijavljenog korisnika (za ponovnu provjeru lozinke).
+  Future<String?> get username => _storage.read(key: _usernameKey);
 
   /// ID prijavljenog zaposlenog (ili null ako nije sačuvan).
   Future<int?> get employeeId async {
@@ -55,5 +63,6 @@ class TokenStorage {
     await _storage.delete(key: _refreshTokenKey);
     await _storage.delete(key: _roleKey);
     await _storage.delete(key: _employeeIdKey);
+    await _storage.delete(key: _usernameKey);
   }
 }

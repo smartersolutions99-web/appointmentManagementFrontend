@@ -17,23 +17,34 @@ Future<AppointmentRequest?> showAppointmentForm(
   DateTime? initialStart,
   required ApiService api, // rezerva za našaptavanje (ako adresar nije učitan)
   required List<CustomerResponse> customers, // adresar za našaptavanje klijenata
+  AppointmentResponse? existing, // ako je zadat → IZMJENA postojećeg termina
+  List<ServiceEntityResponse> services = const [], // padajući izbor usluge
 }) {
+  final isEdit = existing != null;
   final formKey = GlobalKey<FormState>();
-  final customerName = TextEditingController();
-  final phone = TextEditingController();
-  final duration = TextEditingController(text: '30'); // podrazumijevano 30 min
-  final price = TextEditingController();
-  final note = TextEditingController();
+  final customerName =
+      TextEditingController(text: existing?.customerName ?? '');
+  final phone = TextEditingController(text: existing?.customerPhone ?? '');
+  final duration =
+      TextEditingController(text: (existing?.duration ?? 30).toString());
+  final price = TextEditingController(
+      text: existing?.servicePrice != null
+          ? existing!.servicePrice!.toString()
+          : '');
+  final note = TextEditingController(text: existing?.note ?? '');
   // Popunjava se kad se klijent izabere iz liste našaptavanja (pretraga po
   // telefonu vraća i id). Server tada veže termin za postojećeg klijenta.
-  int? customerId;
+  int? customerId = existing?.customerId;
+  int? serviceId = existing?.serviceId;
 
-  // Admin bira zaposlenog iz liste; običnom zaposlenom je „zakucan“ njegov nalog.
-  int? employeeId = isAdmin ? null : currentEmployeeId;
-  // Početno vrijeme: zadato (npr. za „vanredni“ termin na izabrani dan) ili,
-  // ako nije zadato, sljedeći puni sat.
+  // Barber: pri izmjeni zadržavamo postojećeg; inače admin bira, običnom zakucan.
+  int? employeeId =
+      existing?.employeeId ?? (isAdmin ? null : currentEmployeeId);
+  // Početno vrijeme: postojeći termin → njegov početak; inače zadato ili sljedeći sat.
   DateTime startTime;
-  if (initialStart != null) {
+  if (existing?.startTime != null) {
+    startTime = existing!.startTime!.toLocal();
+  } else if (initialStart != null) {
     startTime = initialStart;
   } else {
     final t = DateTime.now().add(const Duration(hours: 1));
@@ -49,7 +60,11 @@ Future<AppointmentRequest?> showAppointmentForm(
           final date = await showDatePicker(
             context: context,
             initialDate: startTime,
-            firstDate: DateTime.now().subtract(const Duration(days: 1)),
+            // Kod izmjene dozvoljavamo i prošle datume (termin može biti raniji);
+            // kod novog termina ne dozvoljavamo prošlost.
+            firstDate: isEdit
+                ? DateTime(2020)
+                : DateTime.now().subtract(const Duration(days: 1)),
             lastDate: DateTime.now().add(const Duration(days: 365)),
           );
           if (date == null || !context.mounted) return;
@@ -57,6 +72,11 @@ Future<AppointmentRequest?> showAppointmentForm(
           final time = await showTimePicker(
             context: context,
             initialTime: TimeOfDay.fromDateTime(startTime),
+            // 24-časovni prikaz (bez AM/PM).
+            builder: (ctx, child) => MediaQuery(
+              data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
+              child: child!,
+            ),
           );
           if (time == null) return;
 
@@ -72,7 +92,7 @@ Future<AppointmentRequest?> showAppointmentForm(
         }
 
         return AlertDialog(
-          title: const Text('Novi termin'),
+          title: Text(isEdit ? 'Izmjena termina' : 'Novi termin'),
           content: SizedBox(
             width: 400,
             child: SingleChildScrollView(
@@ -143,6 +163,39 @@ Future<AppointmentRequest?> showAppointmentForm(
                       },
                     ),
                     const SizedBox(height: 12),
+                    // Izbor usluge (opciono) — kad se izabere, popuni cijenu.
+                    if (services.isNotEmpty) ...[
+                      DropdownButtonFormField<int>(
+                        value: serviceId,
+                        decoration: const InputDecoration(
+                            labelText: 'Usluga (opciono)'),
+                        items: [
+                          const DropdownMenuItem<int>(
+                              value: null, child: Text('— bez usluge —')),
+                          for (final s in services)
+                            DropdownMenuItem(
+                              value: s.id,
+                              child: Text(s.name ?? 'Usluga ${s.id}'),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          setState(() {
+                            serviceId = v;
+                            ServiceEntityResponse? sel;
+                            for (final s in services) {
+                              if (s.id == v) {
+                                sel = s;
+                                break;
+                              }
+                            }
+                            if (sel?.basicPrice != null) {
+                              price.text = sel!.basicPrice!.toString();
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextFormField(
                       controller: price,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -179,6 +232,7 @@ Future<AppointmentRequest?> showAppointmentForm(
                   context,
                   AppointmentRequest(
                     employeeId: employeeId,
+                    serviceId: serviceId,
                     customerId: customerId,
                     customerName: customerName.text.trim().isEmpty
                         ? null

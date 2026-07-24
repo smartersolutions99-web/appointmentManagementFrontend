@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/appointments/reminders.dart';
 import '../services/providers.dart';
 import 'app_router.dart';
 
@@ -131,7 +132,7 @@ class AppShell extends ConsumerWidget {
                   title: Text(currentTitle),
                   actions: [logoutButton],
                 ),
-                body: child,
+                body: RemindersController(child: child),
               ),
             ),
           ],
@@ -161,7 +162,7 @@ class AppShell extends ConsumerWidget {
             ),
         ],
       ),
-      body: child,
+      body: RemindersController(child: child),
     );
   }
 }

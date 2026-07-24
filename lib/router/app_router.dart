@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/appointments/appointments_screen.dart';
 import '../features/auth/login_screen.dart';
+import '../features/auth/password_gate.dart';
 import '../features/customers/customers_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/employees/employees_screen.dart';
@@ -100,7 +101,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: Routes.employees,
-            builder: (context, state) => const EmployeesScreen(),
+            builder: (context, state) => const PasswordGate(
+              title: 'Zaposleni',
+              child: EmployeesScreen(),
+            ),
           ),
           GoRoute(
             path: Routes.services,
@@ -140,7 +144,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: Routes.reports,
-            builder: (context, state) => const ReportsScreen(),
+            builder: (context, state) => const PasswordGate(
+              title: 'Izvještaji',
+              child: ReportsScreen(),
+            ),
           ),
         ],
       ),

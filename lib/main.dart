@@ -4,6 +4,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/theme.dart';
 import 'router/app_router.dart';
+import 'services/notification_service.dart';
 
 /// Ulazna tačka aplikacije — odavde sve počinje.
 Future<void> main() async {
@@ -12,6 +13,9 @@ Future<void> main() async {
 
   // Učitavamo podatke za formatiranje datuma (za naš jezik/format).
   await initializeDateFormatting('sr');
+
+  // Inicijalizuj notifikacije-podsjetnike (na webu/desktopu je ovo no-op).
+  await notificationService.init();
 
   // `ProviderScope` je „korijen“ za Riverpod — bez njega provideri ne rade.
   runApp(const ProviderScope(child: SalonApp()));

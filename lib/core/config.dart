@@ -8,8 +8,10 @@ class AppConfig {
   AppConfig._(); // Privatni konstruktor — klasa se koristi samo statički.
 
   /// Produkcijski backend (Railway).
+  // static const String _railwayUrl =
+  //     'https://appointmentmanagement-production-543b.up.railway.app';
   static const String _railwayUrl =
-      'https://appointmentmanagement-production-543b.up.railway.app';
+      'https://appointmentmanagement-development.up.railway.app';
 
   /// Osnovna adresa backend servera.
   ///

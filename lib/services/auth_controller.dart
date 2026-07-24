@@ -68,6 +68,7 @@ class AuthController extends ChangeNotifier {
         refreshToken: tokens.refreshToken!,
         role: tokens.role,
         employeeId: tokens.employeeId,
+        username: username,
       );
 
       role = tokens.role;
@@ -78,6 +79,39 @@ class AuthController extends ChangeNotifier {
     } catch (e) {
       // Pretvaramo grešku u razumljivu poruku za korisnika.
       return ApiException.from(e).message;
+    }
+  }
+
+  /// Ponovna provjera lozinke (za pristup osjetljivim stranicama — Izvještaji,
+  /// Zaposleni). Provjerava se PONOVNOM prijavom sa sačuvanim korisničkim imenom
+  /// i unesenom lozinkom (server je autoritet). Na uspjeh se tokeni osvježe
+  /// bešavno; na neuspjeh se ništa ne mijenja. Vraća `true` ako je lozinka tačna.
+  Future<bool> verifyPassword(String password) async {
+    final user = await _storage.username;
+    if (user == null || user.isEmpty) return false;
+    try {
+      final tokens = await _api.login(
+        LoginRequest(
+          username: user,
+          password: password,
+          deviceLabel: AppConfig.deviceLabel,
+        ),
+      );
+      if (tokens.accessToken == null || tokens.refreshToken == null) {
+        return false;
+      }
+      // Bešavno osvježi tokene (status/uloga se ne mijenjaju, pa NE zovemo
+      // notifyListeners — da ne pokrenemo osvježavanje router-a dok traje dijalog).
+      await _storage.saveTokens(
+        accessToken: tokens.accessToken!,
+        refreshToken: tokens.refreshToken!,
+        role: tokens.role,
+        employeeId: tokens.employeeId,
+        username: user,
+      );
+      return true;
+    } catch (_) {
+      return false; // pogrešna lozinka ili greška — trenutna sesija netaknuta
     }
   }
 
