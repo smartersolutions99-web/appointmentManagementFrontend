@@ -279,6 +279,27 @@ abstract class ApiService {
   @DELETE('/api/shift-assignments/{id}')
   Future<void> deleteShiftAssignment(@Path('id') int id);
 
+  // ----------------------- DODJELA SMJENE PO DANU -----------------------
+
+  @GET('/api/shift-days')
+  Future<List<ShiftDayResponse>> getShiftDays({
+    @Query('from') required String from, // "YYYY-MM-DD"
+    @Query('to') required String to,
+    @Query('employeeId') int? employeeId, // izostavi → svi zaposleni
+  });
+
+  /// Grupni upis/izmjena smjena po danu (upsert po employeeId+date).
+  @PUT('/api/shift-days')
+  Future<List<ShiftDayResponse>> putShiftDays(
+      @Body() List<ShiftDayRequest> body);
+
+  /// Ukloni smjenu jednog zaposlenog za jedan datum (dan postaje slobodan).
+  @DELETE('/api/shift-days')
+  Future<void> deleteShiftDay({
+    @Query('employeeId') required int employeeId,
+    @Query('date') required String date, // "YYYY-MM-DD"
+  });
+
   // ----------------------- RADNO VRIJEME -----------------------
 
   @GET('/api/working-hours')
@@ -289,6 +310,22 @@ abstract class ApiService {
   @PUT('/api/working-hours')
   Future<List<WorkingHoursResponse>> replaceWorkingHours(
       @Body() List<WorkingHoursRequest> body);
+
+  // Izuzeci radnog vremena po DATUMU (neradni dani / drugačiji sati po sedmici).
+  @GET('/api/working-hours/overrides')
+  Future<List<WorkingHoursOverrideResponse>> getWorkingHoursOverrides({
+    @Query('from') required String from, // "YYYY-MM-DD"
+    @Query('to') required String to,
+  });
+
+  /// Grupni upis/izmjena izuzetaka (upsert po datumu).
+  @PUT('/api/working-hours/overrides')
+  Future<List<WorkingHoursOverrideResponse>> putWorkingHoursOverrides(
+      @Body() List<WorkingHoursOverrideRequest> body);
+
+  /// Ukloni izuzetak za datum → taj dan se vraća na sedmični šablon.
+  @DELETE('/api/working-hours/overrides/{date}')
+  Future<void> deleteWorkingHoursOverride(@Path('date') String date);
 
   // ----------------------- RASPORED (kalendar) -----------------------
 

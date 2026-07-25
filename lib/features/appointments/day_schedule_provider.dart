@@ -391,6 +391,22 @@ final dayScheduleInfoProvider =
   return list.isNotEmpty ? list.first : null;
 });
 
+/// Da li SALON ne radi izabranog dana (praznik / vanredno zatvaranje / neradni
+/// dan po sedmičnom rasporedu). Računa se iz `/api/schedule` (koji već spaja
+/// izuzetke po datumu i sedmični raspored): `salonOpensAt == null` → zatvoreno.
+///
+/// Koristi se da se na zatvoren dan NE nudi zakazivanje. Ako se raspored ne može
+/// učitati → vraćamo `false` (ne znamo → ne blokiramo, da ne smetamo bez razloga).
+final salonClosedForDayProvider = FutureProvider.autoDispose<bool>((ref) async {
+  try {
+    final sched = await ref.watch(dayScheduleInfoProvider.future);
+    if (sched == null) return false;
+    return sched.salonOpensAt == null || sched.salonClosesAt == null;
+  } catch (_) {
+    return false;
+  }
+});
+
 // ===================== AGENDA: SVI BARBERI (admin) =====================
 
 /// Jedna stavka u agendi: termin + ime barbera + ime/telefon klijenta.
@@ -549,31 +565,55 @@ final allDayScheduleProvider =
       if (e != null) e.key: e.value,
   };
 
-  // Okvir mreže = RADNO VRIJEME salona za ovaj dan (za današnji i buduće dane);
-  // za prošle dane ili kad radno vrijeme nije poznato → podrazumijevani okvir
-  // (namjerno širok, jer se radno vrijeme moglo mijenjati u međuvremenu).
-  List<WorkingHoursResponse> workingHours;
+  // Radno vrijeme salona za ovaj dan uzimamo iz /api/schedule (koji VEĆ poštuje
+  // izuzetke po datumu — neradne dane i posebne sate), a NE iz sedmičnog
+  // rasporeda. Tako neradni dan po DATUMU izgleda isto kao neradni po sedmici.
+  // boardShifts (raspored po barberu) nosi i polja salona (ista za sve barbere).
+  Map<int, ScheduleDayResponse> boardShifts = const {};
   try {
-    workingHours = await api.getWorkingHours();
+    boardShifts = await ref.watch(boardShiftsProvider.future);
   } catch (_) {
-    workingHours = const [];
+    boardShifts = const {};
   }
-  final weekday = WeekDay.values[dayStart.weekday - 1]; // Pon=1 → index 0
-  WorkingHoursResponse? salon;
-  for (final w in workingHours) {
-    if (w.dayOfWeek == weekday) {
-      salon = w;
-      break;
-    }
-  }
+  final anySched =
+      boardShifts.values.isNotEmpty ? boardShifts.values.first : null;
+
   final now = DateTime.now();
   final isPast = dayStart.isBefore(DateTime(now.year, now.month, now.day));
-  int? primaryStart;
-  int? primaryEnd;
-  if (!isPast && salon != null) {
-    primaryStart = _minutesOfDay(salon.opensAt);
-    primaryEnd = _minutesOfDay(salon.closesAt);
+
+  int? salonOpenMin;
+  int? salonCloseMin;
+  if (anySched != null) {
+    // Raspored poznat → radno vrijeme salona iz njega (null = zatvoreno).
+    salonOpenMin = _minutesOfDay(anySched.salonOpensAt);
+    salonCloseMin = _minutesOfDay(anySched.salonClosesAt);
+  } else if (!isPast) {
+    // Rezerva (kad /api/schedule nije dostupan): sedmično radno vrijeme.
+    List<WorkingHoursResponse> workingHours;
+    try {
+      workingHours = await api.getWorkingHours();
+    } catch (_) {
+      workingHours = const [];
+    }
+    final weekday = WeekDay.values[dayStart.weekday - 1];
+    for (final w in workingHours) {
+      if (w.dayOfWeek == weekday) {
+        salonOpenMin = _minutesOfDay(w.opensAt);
+        salonCloseMin = _minutesOfDay(w.closesAt);
+        break;
+      }
+    }
   }
+
+  // Salon je POZNATO zatvoren tog dana (raspored kaže da nema radnog vremena).
+  // Tada kolone „Pregleda" ostaju prazne (osim postojećih termina) — kao neradni
+  // dan po sedmici.
+  final salonClosedKnown = anySched != null && salonOpenMin == null;
+
+  // Okvir MREŽE (Mreža/Lista): za današnji i buduće dane koristi radno vrijeme
+  // salona; za prošle dane → podrazumijevani okvir (moglo se mijenjati).
+  final primaryStart = isPast ? null : salonOpenMin;
+  final primaryEnd = isPast ? null : salonCloseMin;
   final window = _dayWindow(dayStart, primaryStart, primaryEnd, appointments);
 
   // Vremenska mreža kroz izračunati okvir, na svakih kSlotMinutes.
@@ -642,13 +682,7 @@ final allDayScheduleProvider =
   }
 
   // ---- Kolone za „Pregled": svaki barber SVOJOM veličinom slota (trajanje) ----
-  // Smjene svih barbera (za okvir kolone). Dijelimo isti provider kao prikaz.
-  Map<int, ScheduleDayResponse> boardShifts = const {};
-  try {
-    boardShifts = await ref.watch(boardShiftsProvider.future);
-  } catch (_) {
-    boardShifts = const {};
-  }
+  // (boardShifts je već učitan iznad — nosi smjenu po barberu + radno vrijeme salona.)
 
   // Trajanje termina po barberu (defaultAppointmentDuration; inače 15 min).
   final durationById = <int, int>{
@@ -681,17 +715,20 @@ final allDayScheduleProvider =
     //  uglavnom prazan prikaz sa nečitljivo sitnim ćelijama.)
     int? winStart;
     int? winEnd;
-    final shStart = _minutesOfDay(sched?.shiftStart);
-    final shEnd = _minutesOfDay(sched?.shiftEnd);
-    if (shStart != null && shEnd != null && shEnd > shStart) {
-      winStart = shStart;
-      winEnd = shEnd;
-    } else {
-      final soStart = _minutesOfDay(salon?.opensAt);
-      final soEnd = _minutesOfDay(salon?.closesAt);
-      if (soStart != null && soEnd != null && soEnd > soStart) {
-        winStart = soStart;
-        winEnd = soEnd;
+    // Ako je salon POZNATO zatvoren tog dana → kolona bez okvira (ostaje prazna,
+    // osim postojećih termina koji je prošire ispod). Time neradni dan po datumu
+    // izgleda isto kao neradni dan po sedmici.
+    if (!salonClosedKnown) {
+      final shStart = _minutesOfDay(sched?.shiftStart);
+      final shEnd = _minutesOfDay(sched?.shiftEnd);
+      if (shStart != null && shEnd != null && shEnd > shStart) {
+        winStart = shStart;
+        winEnd = shEnd;
+      } else if (salonOpenMin != null &&
+          salonCloseMin != null &&
+          salonCloseMin > salonOpenMin) {
+        winStart = salonOpenMin;
+        winEnd = salonCloseMin;
       }
     }
 

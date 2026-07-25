@@ -100,8 +100,24 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
         _focus = null;
       });
 
+  /// Da li salon ne radi izabranog dana. Tada se zakazivanje NE nudi
+  /// (računa se u `salonClosedForDayProvider` iz `/api/schedule`).
+  bool get _salonClosedToday =>
+      ref.read(salonClosedForDayProvider).valueOrNull ?? false;
+
+  /// Ako je salon zatvoren tog dana, javi i vrati `true` (pozivalac prekida).
+  bool _blockIfSalonClosed() {
+    if (_salonClosedToday) {
+      showSnack(context, 'Salon ne radi ovog dana — zakazivanje nije moguće.',
+          isError: true);
+      return true;
+    }
+    return false;
+  }
+
   /// Tap na slobodan slot: prvi = početak, drugi = kraj (opseg).
   void _onTapFree(List<ScheduleSlot> slots, int index) {
+    if (_blockIfSalonClosed()) return;
     setState(() {
       if (_anchor == null) {
         _anchor = index;
@@ -151,6 +167,7 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
   /// Tap na slobodan slot u koloni barbera: prvi = početak, drugi = kraj opsega
   /// (samo ako su svi slotovi između slobodni kod tog barbera).
   void _onTapBoardFree(AllDaySchedule schedule, int barberId, int index) {
+    if (_blockIfSalonClosed()) return;
     final col = schedule.boardColumns[barberId];
     if (col == null) return;
     setState(() {
@@ -733,6 +750,9 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     final showAll = auth.isAdmin && ref.watch(scheduleShowAllProvider);
     final view = ref.watch(scheduleViewProvider);
     final scheduleAsync = ref.watch(dayScheduleProvider);
+    // „Gledamo" i status zatvorenosti salona da se prikaz (npr. FAB) osvježi čim
+    // se učita — pa se na zatvoren dan zakazivanje ne nudi.
+    ref.watch(salonClosedForDayProvider);
     // Osvježi trenutni zoom (koriste ga svi pomoćni graditelji preko `_z`).
     _z = ref.watch(scheduleZoomProvider);
 
@@ -797,14 +817,30 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
           _zoomBy(event.scrollDelta.dy < 0 ? kZoomStep : -kZoomStep);
         }
       },
-      child: showAll
-          ? _buildAllTable()
-          : AsyncValueView<DaySchedule>(
-              value: scheduleAsync,
-              onRetry: () => ref.invalidate(dayScheduleProvider),
-              data: _buildTable,
-            ),
+      child: showAll ? _buildAllTable() : _buildSingleSchedule(scheduleAsync),
     );
+  }
+
+  /// Da li su dva datuma isti kalendarski dan.
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Raspored jednog barbera. Ako imamo podatke za IZABRANI dan → prikaži ih
+  /// (bez bljeska pri osvježavanju istog dana). Inače (prvo učitavanje ili
+  /// promjena datuma pa su podaci za drugi dan) → makaze-loader.
+  Widget _buildSingleSchedule(AsyncValue<DaySchedule> async) {
+    final selected = ref.watch(scheduleDateProvider);
+    final v = async.valueOrNull;
+    if (v != null && _sameDay(v.day, selected)) {
+      return _buildTable(v);
+    }
+    if (async.hasError && v == null) {
+      return ErrorView(
+        message: async.error.toString(),
+        onRetry: () => ref.invalidate(dayScheduleProvider),
+      );
+    }
+    return const LoadingView();
   }
 
   /// Tanka gornja traka: navigacija dana + zoom + dugme „Filteri" + cijeli ekran.
@@ -1165,6 +1201,8 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
   /// - „Pregled" tabla sa izborom u koloni barbera → poništi/zakaži za tog barbera.
   Widget? _buildFab(bool showAll, AllScheduleView view,
       AsyncValue<DaySchedule> scheduleAsync, int minutes) {
+    // Salon ne radi tog dana → ne nudimo dugme za zakazivanje.
+    if (_salonClosedToday) return null;
     // Jedan barber.
     if (!showAll && _lo != null && scheduleAsync.hasValue) {
       return Row(
@@ -1258,11 +1296,20 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
   Widget _buildAllTable() {
     final scheduleAsync = ref.watch(allDayScheduleProvider);
     final view = ref.watch(scheduleViewProvider);
-    return AsyncValueView<AllDaySchedule>(
-      value: scheduleAsync,
-      onRetry: () => ref.invalidate(allDayScheduleProvider),
-      data: (schedule) => _buildAllBody(schedule, view),
-    );
+    final selected = ref.watch(scheduleDateProvider);
+    final v = scheduleAsync.valueOrNull;
+    // Podaci za IZABRANI dan → prikaži (bez bljeska pri osvježavanju istog dana);
+    // inače (prvo učitavanje / promjena datuma) → makaze-loader.
+    if (v != null && _sameDay(v.day, selected)) {
+      return _buildAllBody(v, view);
+    }
+    if (scheduleAsync.hasError && v == null) {
+      return ErrorView(
+        message: scheduleAsync.error.toString(),
+        onRetry: () => ref.invalidate(allDayScheduleProvider),
+      );
+    }
+    return const LoadingView();
   }
 
   /// Bira tijelo zbirnog prikaza prema izabranom načinu (mreža/lista/pregled).
@@ -2277,12 +2324,18 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
 
     final problems = <String>[];
 
-    // Radno vrijeme salona.
+    // Radno vrijeme salona. Ako salon NE radi tog dana → TVRDA blokada:
+    // ne dozvoljavamo zakazivanje (ne nudimo ni „Zakaži ipak").
     final sOpen = _toMinutes(info.salonOpensAt);
     final sClose = _toMinutes(info.salonClosesAt);
     if (sOpen == null || sClose == null) {
-      problems.add('salon je zatvoren tog dana');
-    } else if (startMin < sOpen || endMin > sClose) {
+      if (mounted) {
+        showSnack(context, 'Salon ne radi ovog dana — zakazivanje nije moguće.',
+            isError: true);
+      }
+      return false;
+    }
+    if (startMin < sOpen || endMin > sClose) {
       problems.add('termin je van radnog vremena salona '
           '(${_hhmm(info.salonOpensAt)}–${_hhmm(info.salonClosesAt)})');
     }

@@ -154,7 +154,7 @@ class _PurchasesScreenState extends ConsumerState<PurchasesScreen> {
           if (index >= state.items.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
+              child: LoadingView(),
             );
           }
           final p = state.items[index];

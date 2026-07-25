@@ -135,6 +135,15 @@ class NotificationService {
     }
   }
 
+  /// Sažetak ZAKAZANIH (pending) notifikacija — za dijagnostiku (šta je stvarno
+  /// u redu za okidanje).
+  Future<List<String>> pendingSummary() async {
+    if (!_supported) return const [];
+    await init();
+    final list = await _plugin.pendingNotificationRequests();
+    return [for (final p in list) '#${p.id} ${p.title ?? ''}'];
+  }
+
   /// Odmah prikaži notifikaciju — za test (provjera da dozvole/kanal rade).
   Future<void> showNow({
     required int id,

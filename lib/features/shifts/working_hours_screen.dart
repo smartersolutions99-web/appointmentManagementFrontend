@@ -5,6 +5,7 @@ import '../../core/exceptions.dart';
 import '../../models/models.dart';
 import '../../services/providers.dart';
 import '../../shared/widgets.dart';
+import 'working_hours_calendar_tab.dart';
 
 // ------------------------- Pomoćne funkcije za vrijeme -------------------------
 
@@ -38,18 +39,49 @@ class _DayEdit {
   _DayEdit({required this.enabled, required this.opens, required this.closes});
 }
 
-/// Ekran „Radno vrijeme“ (ADMIN): radno vrijeme salona po danima u sedmici.
-///
-/// Učita trenutno stanje, dozvoli izmjenu (dan po dan ili „brzi unos“ za sve
-/// označene dane) i sačuva ga jednim pozivom (zamjena cijele sedmice).
-class WorkingHoursScreen extends ConsumerStatefulWidget {
+/// Ekran „Radno vrijeme" (ADMIN) sa dva taba:
+/// • „Sedmično" — stalni sedmični raspored (isti svake sedmice).
+/// • „Kalendar" — izuzeci po datumu (neradni dani / posebni sati po sedmici).
+class WorkingHoursScreen extends StatelessWidget {
   const WorkingHoursScreen({super.key});
 
   @override
-  ConsumerState<WorkingHoursScreen> createState() => _WorkingHoursScreenState();
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          Material(
+            color: Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withValues(alpha: 0.4),
+            child: const TabBar(
+              tabs: [Tab(text: 'Sedmično'), Tab(text: 'Kalendar')],
+            ),
+          ),
+          const Expanded(
+            child: TabBarView(
+              children: [_WeeklyHoursTab(), WorkingHoursCalendarTab()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _WorkingHoursScreenState extends ConsumerState<WorkingHoursScreen> {
+/// „Sedmično" — radno vrijeme salona po danima u sedmici (stalni raspored).
+/// Učita trenutno stanje, dozvoli izmjenu (dan po dan ili „brzi unos") i sačuva
+/// jednim pozivom (zamjena cijele sedmice).
+class _WeeklyHoursTab extends ConsumerStatefulWidget {
+  const _WeeklyHoursTab();
+
+  @override
+  ConsumerState<_WeeklyHoursTab> createState() => _WeeklyHoursTabState();
+}
+
+class _WeeklyHoursTabState extends ConsumerState<_WeeklyHoursTab> {
   // Podrazumijevano radno vrijeme za novooznačen dan.
   static const _defOpen = TimeOfDay(hour: 8, minute: 0);
   static const _defClose = TimeOfDay(hour: 21, minute: 0);

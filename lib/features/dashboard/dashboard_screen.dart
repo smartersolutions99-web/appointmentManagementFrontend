@@ -9,6 +9,7 @@ import '../../services/notification_service.dart';
 import '../../services/providers.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets.dart';
+import '../appointments/reminders.dart';
 import '../reports/reports_provider.dart';
 import 'barber_stats_provider.dart';
 
@@ -172,58 +173,76 @@ class _ShortcutCard extends StatelessWidget {
   }
 }
 
-/// Privremeno dugme: dijagnostika notifikacija. Provjeri platformu, dozvolu,
-/// pošalji odmah + zakazano za 10s, i ISPIŠI rezultat u dijalogu (da vidimo
-/// tačno šta ne radi na ovom telefonu).
-class _NotificationTestButton extends StatelessWidget {
+/// Privremeno dugme: dijagnostika notifikacija. Šalje odmah + zakazano za 10s,
+/// pa ISPIŠE: dozvole, koliko MOJIH termina je nađeno i koliko je podsjetnika
+/// STVARNO zakazano u sistemu (da razlučimo „nije zakazano" od „OS ne okida").
+class _NotificationTestButton extends ConsumerWidget {
   const _NotificationTestButton();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return OutlinedButton.icon(
       icon: const Icon(Icons.notifications_active_outlined, size: 18),
       label: const Text('Testiraj notifikaciju'),
       onPressed: () async {
         final r = StringBuffer();
-        r.writeln('Platforma podržana: ${notificationService.debugSupported}');
+        r.writeln('Platforma: ${notificationService.debugSupported}');
 
-        // Dozvola.
         try {
           final granted = await notificationService.requestPermission();
           r.writeln('Dozvola data: $granted');
         } catch (e) {
-          r.writeln('Dozvola — GREŠKA: $e');
+          r.writeln('Dozvola GREŠKA: $e');
         }
         try {
           final enabled = await notificationService.areEnabled();
-          r.writeln('Notifikacije uključene: $enabled');
+          r.writeln('Uključene: $enabled');
         } catch (e) {
-          r.writeln('Provjera uključenosti — GREŠKA: $e');
+          r.writeln('Uključene GREŠKA: $e');
         }
 
         // Odmah.
         try {
           await notificationService.showNow(
-            id: 999001,
-            title: 'Test notifikacije',
-            body: 'Ako vidiš ovo — radi ✅',
-          );
-          r.writeln('Odmah-notifikacija: poslata (bez greške)');
+              id: 999001, title: 'Test', body: 'Odmah ✅');
+          r.writeln('Odmah: poslata');
         } catch (e) {
-          r.writeln('Odmah-notifikacija — GREŠKA: $e');
+          r.writeln('Odmah GREŠKA: $e');
         }
-
-        // Zakazano za 10s.
+        // Zakazano za 10s (zaključaj ekran i čekaj — provjera zakazivanja).
         try {
           await notificationService.scheduleStatusReminder(
             id: 999002,
             whenLocal: DateTime.now().add(const Duration(seconds: 10)),
-            title: 'Test podsjetnika (10s)',
-            body: 'Zakazana notifikacija ✅',
+            title: 'Test (10s)',
+            body: 'Zakazano ✅',
           );
-          r.writeln('Zakazana (10s): poslata (bez greške)');
+          r.writeln('Zakazano (10s): poslata — zaključaj ekran i čekaj');
         } catch (e) {
-          r.writeln('Zakazana — GREŠKA: $e');
+          r.writeln('Zakazano GREŠKA: $e');
+        }
+
+        // Moji termini (da li se uopšte dohvataju sa servera).
+        try {
+          final appts = await ref.read(myReminderAppointmentsProvider.future);
+          final sched = appts
+              .where((a) =>
+                  a.id != null &&
+                  (a.status == null || a.status == AppointmentStatus.scheduled))
+              .length;
+          r.writeln('Mojih termina (danas+2d): ${appts.length} (zakazanih: $sched)');
+        } catch (e) {
+          r.writeln('Termini GREŠKA: $e');
+        }
+        // Šta je STVARNO zakazano u sistemu (pending).
+        try {
+          final pending = await notificationService.pendingSummary();
+          r.writeln('Zakazano u sistemu: ${pending.length}');
+          for (final p in pending.take(8)) {
+            r.writeln('  $p');
+          }
+        } catch (e) {
+          r.writeln('Pending GREŠKA: $e');
         }
 
         if (!context.mounted) return;

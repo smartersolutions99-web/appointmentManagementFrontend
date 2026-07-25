@@ -7,6 +7,7 @@ import '../features/auth/password_gate.dart';
 import '../features/customers/customers_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/employees/employees_screen.dart';
+import '../features/preparati/preparati_screen.dart';
 import '../features/products/products_screen.dart';
 import '../features/purchases/purchases_screen.dart';
 import '../features/reports/reports_screen.dart';
@@ -31,6 +32,7 @@ class Routes {
   static const suppliers = '/suppliers';
   static const purchases = '/purchases';
   static const sales = '/sales';
+  static const preparati = '/preparati';
   static const appointments = '/appointments';
   static const workingHours = '/working-hours';
   static const shiftTemplates = '/shift-templates';
@@ -109,6 +111,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.services,
             builder: (context, state) => const ServicesScreen(),
+          ),
+          GoRoute(
+            path: Routes.preparati,
+            builder: (context, state) => const PreparatiScreen(),
           ),
           GoRoute(
             path: Routes.products,

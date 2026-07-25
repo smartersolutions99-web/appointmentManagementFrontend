@@ -21,9 +21,8 @@ const _allItems = <_NavItem>[
   _NavItem(Routes.dashboard, Icons.dashboard_outlined, 'Početna'),
   _NavItem(Routes.appointments, Icons.event_outlined, 'Termini'),
   _NavItem(Routes.customers, Icons.people_outline, 'Klijenti'),
-  _NavItem(Routes.suppliers, Icons.local_shipping_outlined, 'Dobavljači'),
-  _NavItem(Routes.purchases, Icons.inventory_outlined, 'Nabavke'),
-  _NavItem(Routes.sales, Icons.point_of_sale, 'Prodaje'),
+  // „Preparati" objedinjuje: Nabavka, Proizvodi, Prodaja, Dobavljači (+ Stanje).
+  _NavItem(Routes.preparati, Icons.inventory_2_outlined, 'Preparati'),
   _NavItem(Routes.employees, Icons.badge_outlined, 'Zaposleni', adminOnly: true),
   _NavItem(Routes.services, Icons.content_cut, 'Usluge', adminOnly: true),
   _NavItem(Routes.workingHours, Icons.access_time, 'Radno vrijeme',
@@ -33,7 +32,6 @@ const _allItems = <_NavItem>[
   _NavItem(Routes.shiftAssignments, Icons.assignment_ind_outlined,
       'Dodjela smjena',
       adminOnly: true),
-  _NavItem(Routes.products, Icons.inventory_2_outlined, 'Proizvodi'),
   _NavItem(Routes.reports, Icons.bar_chart_outlined, 'Izvještaji', adminOnly: true),
 ];
 

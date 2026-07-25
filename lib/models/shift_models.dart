@@ -189,6 +189,82 @@ class WorkingHoursResponse with _$WorkingHoursResponse {
       _$WorkingHoursResponseFromJson(json);
 }
 
+// ========================= DODJELA SMJENE PO DANU =========================
+
+/// Zahtjev za smjenu zaposlenog za JEDAN datum (bulk upsert kroz niz).
+/// Šalje se na `PUT /api/shift-days`. Vrijeme "HH:mm:ss", datum "YYYY-MM-DD".
+/// `shiftTemplateId` je opcion (samo radi naziva smjene) — izostavlja se kad je null.
+@freezed
+class ShiftDayRequest with _$ShiftDayRequest {
+  const factory ShiftDayRequest({
+    required int employeeId,
+    required String date, // "YYYY-MM-DD"
+    required String startTime, // "HH:mm:ss"
+    required String endTime, // "HH:mm:ss"
+    @JsonKey(includeIfNull: false) int? shiftTemplateId,
+    @JsonKey(includeIfNull: false) String? note,
+  }) = _ShiftDayRequest;
+
+  factory ShiftDayRequest.fromJson(Map<String, dynamic> json) =>
+      _$ShiftDayRequestFromJson(json);
+}
+
+/// Smjena zaposlenog za jedan datum kako je vraća server.
+@freezed
+class ShiftDayResponse with _$ShiftDayResponse {
+  const factory ShiftDayResponse({
+    int? id,
+    int? sellingPlaceId,
+    int? employeeId,
+    String? employeeName,
+    String? date, // "YYYY-MM-DD"
+    String? startTime, // "HH:mm:ss"
+    String? endTime, // "HH:mm:ss"
+    int? shiftTemplateId,
+    String? shiftTemplateName,
+    String? note,
+  }) = _ShiftDayResponse;
+
+  factory ShiftDayResponse.fromJson(Map<String, dynamic> json) =>
+      _$ShiftDayResponseFromJson(json);
+}
+
+// ===================== IZUZECI RADNOG VREMENA (PO DATUMU) =====================
+
+/// Izuzetak radnog vremena za JEDAN datum (ZAHTJEV) — bulk upsert kroz niz.
+/// Šalje se na `PUT /api/working-hours/overrides`. Ima prednost nad sedmičnim
+/// šablonom za taj datum: `closed=true` → salon zatvoren; inače koristi opensAt/closesAt.
+@freezed
+class WorkingHoursOverrideRequest with _$WorkingHoursOverrideRequest {
+  const factory WorkingHoursOverrideRequest({
+    required String date, // "YYYY-MM-DD"
+    required bool closed, // true = salon zatvoren tog datuma
+    @JsonKey(includeIfNull: false) String? opensAt, // "HH:mm:ss" (ako radi)
+    @JsonKey(includeIfNull: false) String? closesAt,
+    @JsonKey(includeIfNull: false) String? note,
+  }) = _WorkingHoursOverrideRequest;
+
+  factory WorkingHoursOverrideRequest.fromJson(Map<String, dynamic> json) =>
+      _$WorkingHoursOverrideRequestFromJson(json);
+}
+
+/// Izuzetak radnog vremena za jedan datum kako ga vraća server.
+@freezed
+class WorkingHoursOverrideResponse with _$WorkingHoursOverrideResponse {
+  const factory WorkingHoursOverrideResponse({
+    int? id,
+    int? sellingPlaceId,
+    String? date, // "YYYY-MM-DD"
+    @Default(false) bool closed,
+    String? opensAt, // "HH:mm:ss"
+    String? closesAt,
+    String? note,
+  }) = _WorkingHoursOverrideResponse;
+
+  factory WorkingHoursOverrideResponse.fromJson(Map<String, dynamic> json) =>
+      _$WorkingHoursOverrideResponseFromJson(json);
+}
+
 // ============================= RASPORED (SCHEDULE) =============================
 
 /// Raspored za jedan dan (GET /api/schedule): radno vrijeme salona + smjena

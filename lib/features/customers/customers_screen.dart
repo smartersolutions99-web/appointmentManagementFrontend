@@ -125,7 +125,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           if (index >= state.items.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
+              child: LoadingView(),
             );
           }
 

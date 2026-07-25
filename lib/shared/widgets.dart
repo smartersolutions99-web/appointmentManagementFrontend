@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'scissors_loader.dart';
+
 /// Skup malih, ponovo upotrebljivih widgeta i pomoćnih funkcija
 /// koje koristimo na više ekrana (da ne ponavljamo kod).
 
-/// Prikazuje stanje učitavanja sa porukom (centralni spinner).
+/// Prikazuje stanje učitavanja (slatka animacija makaza — brend salona).
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
+    return const Center(child: ScissorsLoader());
   }
 }
 

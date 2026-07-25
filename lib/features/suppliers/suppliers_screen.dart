@@ -134,7 +134,7 @@ class _SuppliersScreenState extends ConsumerState<SuppliersScreen> {
           if (index >= state.items.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
+              child: LoadingView(),
             );
           }
           final supplier = state.items[index];
