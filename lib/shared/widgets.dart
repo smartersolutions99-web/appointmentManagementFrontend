@@ -109,6 +109,42 @@ class AsyncValueView<T> extends StatelessWidget {
   }
 }
 
+/// Blaga traka „samo pregled" — prikazuje se zaposlenima na ekranima koje smiju
+/// samo gledati (radno vrijeme, šabloni smjena, dodjela smjena), da bude jasno
+/// zašto nema dugmadi za izmjenu.
+class ReadOnlyBanner extends StatelessWidget {
+  final String message;
+
+  const ReadOnlyBanner({
+    super.key,
+    this.message = 'Samo pregled — izmjene može praviti administrator.',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.visibility_outlined,
+              size: 18, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message, style: theme.textTheme.bodySmall),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Prikazuje kratku poruku na dnu ekrana (snackbar).
 void showSnack(BuildContext context, String message, {bool isError = false}) {
   final messenger = ScaffoldMessenger.of(context);

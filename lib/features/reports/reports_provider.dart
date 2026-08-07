@@ -74,13 +74,19 @@ class BarberReport {
   final String name;
   final StatusCounts counts;
   final double revenue; // suma cijena ZAVRŠENIH termina
+  final double? commission; // procenat (provizija) zaposlenog, 0–100 (null = nije podešen)
 
   const BarberReport({
     required this.employeeId,
     required this.name,
     required this.counts,
     required this.revenue,
+    this.commission,
   });
+
+  /// Koliko od prihoda ostaje salonu/vlasniku (nakon provizije zaposlenog).
+  /// Kad procenat nije podešen, tretiramo ga kao 0% (cio prihod ostaje salonu).
+  double get salonKeep => revenue * (1 - (commission ?? 0) / 100);
 }
 
 /// Statistika jedne usluge: koliko puta je rađena i koliki prihod je donijela.
@@ -177,9 +183,10 @@ final detailedReportProvider =
     if (page > 100) break; // sigurnosna granica protiv beskonačne petlje
   }
 
-  // Imena barbera.
+  // Imena i procenti (provizija) barbera.
   final employees = await ref.watch(employeesProvider.future);
   final nameById = {for (final e in employees) e.id: e.name};
+  final commissionById = {for (final e in employees) e.id: e.commission};
 
   // Imena usluga (ako ne uspije, koristimo ID).
   List<ServiceEntityResponse> services;
@@ -214,6 +221,7 @@ final detailedReportProvider =
         name: nameById[entry.key] ?? 'Zaposleni ${entry.key ?? '-'}',
         counts: entry.value.counts,
         revenue: entry.value.revenue,
+        commission: commissionById[entry.key],
       ),
   ]..sort((a, b) => b.revenue.compareTo(a.revenue));
 
@@ -232,5 +240,137 @@ final detailedReportProvider =
     totalRevenue: overall.revenue,
     barbers: barbers,
     services: serviceReports,
+  );
+});
+
+// ===================== BUDUĆI (ZAKAZANI) TERMINI =====================
+
+/// Vremenski opseg za „budući" izvještaj. Podrazumijevano: sljedećih 7 dana.
+/// NAMJERNO odvojen od `reportRangeProvider` (koji je za prošlost/prihod).
+final upcomingRangeProvider = StateProvider<DateTimeRange>((ref) {
+  final now = DateTime.now();
+  final start = DateTime(now.year, now.month, now.day); // od danas 00:00
+  return DateTimeRange(start: start, end: start.add(const Duration(days: 7)));
+});
+
+/// Statistika budućih (zakazanih) termina za jednog barbera.
+class UpcomingBarber {
+  final int? employeeId;
+  final String name;
+  final int scheduled; // broj zakazanih budućih termina
+  final DateTime? nextStart; // najbliži budući termin
+  final double expectedRevenue; // suma cijena zakazanih (očekivano)
+
+  const UpcomingBarber({
+    required this.employeeId,
+    required this.name,
+    required this.scheduled,
+    required this.nextStart,
+    required this.expectedRevenue,
+  });
+}
+
+/// Zbir budućih termina: ukupno + očekivani prihod + po barberu + po danu.
+class UpcomingReport {
+  final int totalScheduled;
+  final double expectedRevenue;
+  final List<UpcomingBarber> barbers; // sortirano po broju (najviše gore)
+  final Map<DateTime, int> byDay; // dan (ponoć) → broj zakazanih
+
+  const UpcomingReport({
+    required this.totalScheduled,
+    required this.expectedRevenue,
+    required this.barbers,
+    required this.byDay,
+  });
+
+  /// Najprometniji budući dan (ili null).
+  MapEntry<DateTime, int>? get busiestDay {
+    MapEntry<DateTime, int>? best;
+    for (final e in byDay.entries) {
+      if (best == null || e.value > best.value) best = e;
+    }
+    return best;
+  }
+}
+
+class _UpAcc {
+  int count = 0;
+  double expected = 0;
+  DateTime? next;
+}
+
+/// Učitava buduće ZAKAZANE termine u izabranom opsegu i grupiše ih po barberu.
+/// Broji samo status „zakazan" i samo termine koji su još u budućnosti (od sada).
+final upcomingReportProvider =
+    FutureProvider.autoDispose<UpcomingReport>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  final range = ref.watch(upcomingRangeProvider);
+  final now = DateTime.now();
+
+  // Ne prikazuj prošlost: početak = kasniji od (izabrani početak, sada).
+  final startEff = range.start.isBefore(now) ? now : range.start;
+
+  final all = <AppointmentResponse>[];
+  var page = 0;
+  while (true) {
+    final p = await api.getAppointments(
+      from: _iso(startEff),
+      to: _iso(range.end),
+      status: AppointmentStatus.scheduled.apiValue, // samo zakazani
+      page: page,
+      size: 200,
+      sort: 'startTime,asc',
+    );
+    all.addAll(p.content);
+    if (p.last || p.content.isEmpty) break;
+    page++;
+    if (page > 100) break;
+  }
+
+  final employees = await ref.watch(employeesProvider.future);
+  final nameById = {for (final e in employees) e.id: e.name};
+
+  final byBarber = <int?, _UpAcc>{};
+  final byDay = <DateTime, int>{};
+  var total = 0;
+  var expected = 0.0;
+
+  for (final a in all) {
+    if (isBreakNote(a.note)) continue;
+    final status = a.status ?? AppointmentStatus.scheduled;
+    if (status != AppointmentStatus.scheduled) continue; // sigurnosno
+    final start = a.startTime?.toLocal();
+    if (start == null || start.isBefore(now)) continue; // samo budući
+    final price = a.servicePrice ?? 0;
+
+    total++;
+    expected += price;
+
+    final acc = byBarber.putIfAbsent(a.employeeId, () => _UpAcc());
+    acc.count++;
+    acc.expected += price;
+    if (acc.next == null || start.isBefore(acc.next!)) acc.next = start;
+
+    final day = DateTime(start.year, start.month, start.day);
+    byDay[day] = (byDay[day] ?? 0) + 1;
+  }
+
+  final barbers = [
+    for (final entry in byBarber.entries)
+      UpcomingBarber(
+        employeeId: entry.key,
+        name: nameById[entry.key] ?? 'Zaposleni ${entry.key ?? '-'}',
+        scheduled: entry.value.count,
+        nextStart: entry.value.next,
+        expectedRevenue: entry.value.expected,
+      ),
+  ]..sort((a, b) => b.scheduled.compareTo(a.scheduled));
+
+  return UpcomingReport(
+    totalScheduled: total,
+    expectedRevenue: expected,
+    barbers: barbers,
+    byDay: byDay,
   );
 });

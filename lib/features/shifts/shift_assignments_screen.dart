@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/exceptions.dart';
 import '../../models/models.dart';
+import '../../services/providers.dart';
 import '../../shared/month_picker.dart';
 import '../../shared/widgets.dart';
 import '../employees/employees_provider.dart';
@@ -395,18 +396,25 @@ class _DayCell extends StatelessWidget {
     }
 
     final hasShift = shift != null;
+    final isOff = shift?.off ?? false; // slobodan dan (zaposleni ne radi)
     final bg = selected
         ? cs.primary.withValues(alpha: 0.18)
-        : hasShift
-            ? cs.primaryContainer.withValues(alpha: 0.5)
-            : cs.surface;
+        : isOff
+            ? cs.surfaceContainerHighest.withValues(alpha: 0.8)
+            : hasShift
+                ? cs.primaryContainer.withValues(alpha: 0.5)
+                : cs.surface;
     final borderColor = selected ? cs.primary : cs.outlineVariant;
 
-    final label = hasShift
-        ? (shift!.shiftTemplateName?.isNotEmpty ?? false
-            ? shift!.shiftTemplateName!
-            : '${_hm(shift!.startTime)}–${_hm(shift!.endTime)}')
-        : null;
+    // Za slobodan dan pišemo „Slobodan"; inače naziv šablona ili vrijeme smjene.
+    final label = isOff
+        ? 'Slobodan'
+        : hasShift
+            ? (shift!.shiftTemplateName?.isNotEmpty ?? false
+                ? shift!.shiftTemplateName!
+                : '${_hm(shift!.startTime)}–${_hm(shift!.endTime)}')
+            : null;
+    final labelColor = isOff ? cs.onSurfaceVariant : cs.onPrimaryContainer;
 
     return Padding(
       padding: const EdgeInsets.all(2),
@@ -444,7 +452,8 @@ class _DayCell extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontSize: 11,
-                        color: cs.onPrimaryContainer,
+                        color: labelColor,
+                        fontStyle: isOff ? FontStyle.italic : FontStyle.normal,
                         fontWeight: FontWeight.w500),
                   ),
               ],
@@ -464,6 +473,21 @@ class _ActionBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(shiftDaysControllerProvider);
     final empId = state.selectedEmployeeId;
+    final isAdmin = ref.watch(authControllerProvider).isAdmin;
+
+    // Zaposleni (ne-admin) vidi dodjelu smjena samo za pregled — bez akcija.
+    if (!isAdmin) {
+      return const Material(
+        elevation: 8,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: ReadOnlyBanner(),
+          ),
+        ),
+      );
+    }
 
     // Ime aktivnog barbera (za lijepšu poruku).
     final name = ref.watch(employeesProvider).maybeWhen(
@@ -518,6 +542,12 @@ class _ActionBar extends ConsumerWidget {
                           icon: const Icon(Icons.remove_circle_outline,
                               size: 18),
                           label: const Text('Ukloni'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed:
+                              count == 0 ? null : () => _dayOff(context, ref),
+                          icon: const Icon(Icons.event_busy, size: 18),
+                          label: const Text('Slobodan dan'),
                         ),
                         FilledButton.icon(
                           onPressed:
@@ -586,6 +616,41 @@ class _ActionBar extends ConsumerWidget {
       }
     }
   }
+
+  /// Označi izabrane dane kao „slobodan dan": zaposleni tada ne radi i nema
+  /// smjenu (backend za takav dan vraća prazan raspored — ne može se zakazati).
+  Future<void> _dayOff(BuildContext context, WidgetRef ref) async {
+    final state = ref.read(shiftDaysControllerProvider);
+    final ctrl = ref.read(shiftDaysControllerProvider.notifier);
+    final empId = state.selectedEmployeeId;
+    if (empId == null || state.selectedDays.isEmpty) return;
+
+    final ok = await confirmDialog(
+      context,
+      title: 'Slobodan dan',
+      message:
+          'Označiti izabrane dane kao slobodne? Zaposleni tada ne radi i nema '
+          'smjenu za te dane.',
+      confirmText: 'Slobodan dan',
+    );
+    if (!ok) return;
+
+    // Za slobodan dan šaljemo off=true (bez vremena) — po jedan zahtjev za dan.
+    final requests = [
+      for (final day in state.selectedDays)
+        ShiftDayRequest(employeeId: empId, date: day, off: true),
+    ];
+    try {
+      await ctrl.assign(requests);
+      if (context.mounted) {
+        showSnack(context, 'Označeno kao slobodan dan (${requests.length}).');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(context, ApiException.from(e).message, isError: true);
+      }
+    }
+  }
 }
 
 /// Rezultat dijaloga za dodjelu: vrijeme (za server) + opciono id šablona.
@@ -613,6 +678,7 @@ class _AssignShiftDialogState extends ConsumerState<_AssignShiftDialog> {
   Future<TimeOfDay?> _pick(TimeOfDay initial) => showTimePicker(
         context: context,
         initialTime: initial,
+        initialEntryMode: TimePickerEntryMode.input, // po difoltu unos brojki
         builder: (ctx, child) => MediaQuery(
           data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
           child: child!,

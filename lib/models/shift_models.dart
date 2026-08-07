@@ -194,15 +194,20 @@ class WorkingHoursResponse with _$WorkingHoursResponse {
 /// Zahtjev za smjenu zaposlenog za JEDAN datum (bulk upsert kroz niz).
 /// Šalje se na `PUT /api/shift-days`. Vrijeme "HH:mm:ss", datum "YYYY-MM-DD".
 /// `shiftTemplateId` je opcion (samo radi naziva smjene) — izostavlja se kad je null.
+///
+/// „Slobodan dan": kad je `off == true`, `startTime`/`endTime` se NE šalju
+/// (server ih ignoriše) — taj dan zaposleni ne radi. Kad je `off` izostavljen
+/// ili `false`, vremena su obavezna (`endTime > startTime`).
 @freezed
 class ShiftDayRequest with _$ShiftDayRequest {
   const factory ShiftDayRequest({
     required int employeeId,
     required String date, // "YYYY-MM-DD"
-    required String startTime, // "HH:mm:ss"
-    required String endTime, // "HH:mm:ss"
+    @JsonKey(includeIfNull: false) String? startTime, // "HH:mm:ss" (izostavlja se za slobodan dan)
+    @JsonKey(includeIfNull: false) String? endTime, // "HH:mm:ss"
     @JsonKey(includeIfNull: false) int? shiftTemplateId,
     @JsonKey(includeIfNull: false) String? note,
+    @JsonKey(includeIfNull: false) bool? off, // true = slobodan dan
   }) = _ShiftDayRequest;
 
   factory ShiftDayRequest.fromJson(Map<String, dynamic> json) =>
@@ -223,6 +228,7 @@ class ShiftDayResponse with _$ShiftDayResponse {
     int? shiftTemplateId,
     String? shiftTemplateName,
     String? note,
+    @Default(false) bool off, // true = slobodan dan (zaposleni ne radi)
   }) = _ShiftDayResponse;
 
   factory ShiftDayResponse.fromJson(Map<String, dynamic> json) =>

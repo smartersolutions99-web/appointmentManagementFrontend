@@ -72,6 +72,7 @@ Future<AppointmentRequest?> showAppointmentForm(
           final time = await showTimePicker(
             context: context,
             initialTime: TimeOfDay.fromDateTime(startTime),
+            initialEntryMode: TimePickerEntryMode.input, // po difoltu unos brojki
             // 24-časovni prikaz (bez AM/PM).
             builder: (ctx, child) => MediaQuery(
               data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),

@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <!-- Da zakazani podsjetnici prežive restart telefona. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Instalacija preuzetog APK-a (nadogradnja aplikacije unutar aplikacije). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
         android:label="BarberSS"
         android:name="${applicationName}"

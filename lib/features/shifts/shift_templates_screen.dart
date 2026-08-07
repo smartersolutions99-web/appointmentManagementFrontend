@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/models.dart';
+import '../../services/providers.dart';
 import '../../shared/widgets.dart';
 import 'shift_template_form.dart';
 import 'shift_templates_provider.dart';
@@ -19,6 +20,7 @@ class ShiftTemplatesScreen extends ConsumerStatefulWidget {
 class _ShiftTemplatesScreenState extends ConsumerState<ShiftTemplatesScreen> {
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
+  bool _isAdmin = true; // osvježava se u build-u (utiče na tap: izmjena vs pregled)
 
   @override
   void initState() {
@@ -43,13 +45,18 @@ class _ShiftTemplatesScreenState extends ConsumerState<ShiftTemplatesScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(shiftTemplatesControllerProvider);
+    // Zaposleni (ne-admin) vidi šablone samo za pregled — bez dodavanja/izmjene.
+    final isAdmin = ref.watch(authControllerProvider).isAdmin;
+    _isAdmin = isAdmin;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showShiftTemplateForm(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Novi šablon'),
-      ),
+      floatingActionButton: isAdmin
+          ? FloatingActionButton.extended(
+              onPressed: () => showShiftTemplateForm(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Novi šablon'),
+            )
+          : null,
       body: Column(
         children: [
           // Pretraga (debounce je u kontroleru).
@@ -149,8 +156,10 @@ class _ShiftTemplatesScreenState extends ConsumerState<ShiftTemplatesScreen> {
           ],
         ),
         isThreeLine: note != null && note.isNotEmpty,
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => showShiftTemplateForm(context, existing: template),
+        trailing: Icon(_isAdmin ? Icons.chevron_right : Icons.visibility_outlined),
+        // Admin: otvara izmjenu. Zaposleni: otvara isti ekran u režimu pregleda.
+        onTap: () =>
+            showShiftTemplateForm(context, existing: template, readOnly: !_isAdmin),
       ),
     );
   }

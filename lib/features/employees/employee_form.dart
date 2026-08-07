@@ -27,6 +27,7 @@ class _EmployeeFormState extends State<EmployeeForm> {
   late final TextEditingController _phone;
   late final TextEditingController _email;
   late final TextEditingController _duration;
+  late final TextEditingController _commission;
 
   int? _roleId;
   int? _sellingPlaceId;
@@ -42,8 +43,15 @@ class _EmployeeFormState extends State<EmployeeForm> {
     _email = TextEditingController(text: e?.email ?? '');
     _duration = TextEditingController(
         text: e?.defaultAppointmentDuration?.toString() ?? '');
+    _commission = TextEditingController(text: _fmtCommission(e?.commission));
     _roleId = e?.roleId;
     _sellingPlaceId = e?.sellingPlaceId;
+  }
+
+  /// Procenat za prikaz u polju: cijeli broj bez ".0" (npr. 50), inače decimalno.
+  static String _fmtCommission(double? v) {
+    if (v == null) return '';
+    return v % 1 == 0 ? v.toInt().toString() : v.toString();
   }
 
   @override
@@ -54,6 +62,7 @@ class _EmployeeFormState extends State<EmployeeForm> {
     _phone.dispose();
     _email.dispose();
     _duration.dispose();
+    _commission.dispose();
     super.dispose();
   }
 
@@ -73,6 +82,10 @@ class _EmployeeFormState extends State<EmployeeForm> {
       defaultAppointmentDuration: _duration.text.trim().isEmpty
           ? null
           : int.tryParse(_duration.text.trim()),
+      // Procenat (provizija) zaposlenog. Prazno → null (ne mijenja se).
+      commission: _commission.text.trim().isEmpty
+          ? null
+          : double.tryParse(_commission.text.trim().replaceAll(',', '.')),
     );
     Navigator.pop(context, request);
   }
@@ -173,6 +186,27 @@ class _EmployeeFormState extends State<EmployeeForm> {
                     if (t.isEmpty) return null; // opciono
                     final n = int.tryParse(t);
                     if (n == null || n < 1) return 'Unesite broj minuta (≥ 1)';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _commission,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Procenat (%)',
+                    suffixText: '%',
+                    helperText:
+                        'Provizija zaposlenog. Koristi se u izvještaju po zaposlenom.',
+                  ),
+                  validator: (v) {
+                    final t = (v ?? '').trim().replaceAll(',', '.');
+                    if (t.isEmpty) return null; // opciono
+                    final n = double.tryParse(t);
+                    if (n == null || n < 0 || n > 100) {
+                      return 'Unesite procenat 0–100';
+                    }
                     return null;
                   },
                 ),

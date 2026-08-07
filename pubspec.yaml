@@ -38,6 +38,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   fl_chart: ^0.69.0 # Grafikoni (pita, stubičasti) za izvještaje
   path_provider: ^2.1.0 # Pristup folderima (Downloads) za desktop export
+  package_info_plus: ^8.1.0 # Čita trenutnu verziju aplikacije (provjera nadogradnje)
+  open_filex: ^4.5.0 # Otvara preuzeti APK da Android pokrene instalaciju
   flutter_local_notifications: ^22.1.0
   timezone: ^0.11.1
   flutter_timezone: ^5.1.0

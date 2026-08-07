@@ -16,6 +16,10 @@ class EmployeeRequest with _$EmployeeRequest {
     String? phoneNumber,
     String? email,
     int? defaultAppointmentDuration, // podrazumijevano trajanje termina (min)
+    // Procenat (provizija) zaposlenog, 0–100. Koristi se u izvještaju po
+    // zaposlenom (kolone „Procenat" i „Ostaje salonu"). Izostavlja se kad je
+    // null da pri izmjeni ne bi slučajno obrisali postojeću vrijednost.
+    @JsonKey(includeIfNull: false) double? commission,
   }) = _EmployeeRequest;
 
   factory EmployeeRequest.fromJson(Map<String, dynamic> json) =>
@@ -35,6 +39,7 @@ class EmployeeResponse with _$EmployeeResponse {
     String? phoneNumber,
     String? email,
     int? defaultAppointmentDuration, // podrazumijevano trajanje termina (min)
+    double? commission, // procenat (provizija) zaposlenog, 0–100
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _EmployeeResponse;

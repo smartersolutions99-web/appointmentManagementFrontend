@@ -27,11 +27,14 @@ class PreparatiScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isAdmin = ref.watch(authControllerProvider).isAdmin;
 
+    // Zaposleni (ne-admin) ima pristup SAMO tabu „Proizvodi". Nabavka, Prodaja,
+    // Dobavljači i Stanje sadrže osjetljive podatke (nabavne cijene, profit) pa
+    // ih vidi samo administrator.
     final tabs = <_TabDef>[
-      const _TabDef('Nabavka', PurchasesScreen()),
+      if (isAdmin) const _TabDef('Nabavka', PurchasesScreen()),
       const _TabDef('Proizvodi', ProductsScreen()),
-      const _TabDef('Prodaja', SalesScreen()),
-      const _TabDef('Dobavljači', SuppliersScreen()),
+      if (isAdmin) const _TabDef('Prodaja', SalesScreen()),
+      if (isAdmin) const _TabDef('Dobavljači', SuppliersScreen()),
       // „Stanje" (finansije/profit) vidi samo administrator.
       if (isAdmin) const _TabDef('Stanje', StanjeTab()),
     ];

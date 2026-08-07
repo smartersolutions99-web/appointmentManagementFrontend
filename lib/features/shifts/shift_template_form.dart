@@ -47,7 +47,15 @@ class ShiftTemplateFormScreen extends ConsumerStatefulWidget {
   /// Ako je zadat — uređujemo postojeći šablon; inače pravimo novi.
   final ShiftTemplateResponse? existing;
 
-  const ShiftTemplateFormScreen({super.key, this.existing});
+  /// Kad je `true`, forma je „samo pregled" (za zaposlene): polja su zaključana,
+  /// bez dugmadi za čuvanje/brisanje.
+  final bool readOnly;
+
+  const ShiftTemplateFormScreen({
+    super.key,
+    this.existing,
+    this.readOnly = false,
+  });
 
   @override
   ConsumerState<ShiftTemplateFormScreen> createState() =>
@@ -108,6 +116,7 @@ class _ShiftTemplateFormScreenState
     return showTimePicker(
       context: context,
       initialTime: initial,
+      initialEntryMode: TimePickerEntryMode.input, // po difoltu unos brojki
       builder: (ctx, child) => MediaQuery(
         // Salon koristi 24-časovni prikaz vremena.
         data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
@@ -225,12 +234,15 @@ class _ShiftTemplateFormScreenState
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
+    final readOnly = widget.readOnly;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEdit ? 'Izmjena šablona' : 'Novi šablon smjene'),
+        title: Text(readOnly
+            ? 'Pregled šablona'
+            : (isEdit ? 'Izmjena šablona' : 'Novi šablon smjene')),
         actions: [
-          if (isEdit)
+          if (isEdit && !readOnly)
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: 'Obriši',
@@ -243,8 +255,13 @@ class _ShiftTemplateFormScreenState
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
           children: [
+            if (readOnly) ...[
+              const ReadOnlyBanner(),
+              const SizedBox(height: 12),
+            ],
             TextFormField(
               controller: _name,
+              readOnly: readOnly,
               decoration: const InputDecoration(
                 labelText: 'Naziv šablona',
                 hintText: 'npr. Marko — standardna nedjelja',
@@ -256,6 +273,7 @@ class _ShiftTemplateFormScreenState
             const SizedBox(height: 12),
             TextFormField(
               controller: _note,
+              readOnly: readOnly,
               decoration: const InputDecoration(
                 labelText: 'Napomena (opciono)',
                 border: OutlineInputBorder(),
@@ -266,27 +284,31 @@ class _ShiftTemplateFormScreenState
             Text('Radni dani', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
-              'Označite dane kada se radi i unesite vrijeme. Neoznačeni dani su slobodni.',
+              readOnly
+                  ? 'Dani i vremena ovog šablona (neoznačeni dani su slobodni).'
+                  : 'Označite dane kada se radi i unesite vrijeme. Neoznačeni dani su slobodni.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
-            _buildBulkCard(),
-            const SizedBox(height: 8),
+            if (!readOnly) ...[
+              _buildBulkCard(),
+              const SizedBox(height: 8),
+            ],
             for (final day in WeekDay.values) _buildDayRow(day),
             const SizedBox(height: 20),
-            // Puna širina je ovdje bezbjedna (dugme je u tijelu sa ograničenom
-            // širinom, a ne u bottomNavigationBar-u).
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: const Text('Sačuvaj'),
-            ),
+            // Dugme „Sačuvaj" postoji samo kad nije „samo pregled".
+            if (!readOnly)
+              FilledButton.icon(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check),
+                label: const Text('Sačuvaj'),
+              ),
           ],
         ),
       ),
@@ -343,7 +365,9 @@ class _ShiftTemplateFormScreenState
       children: [
         Checkbox(
           value: d.enabled,
-          onChanged: (v) => setState(() => d.enabled = v ?? false),
+          onChanged: widget.readOnly
+              ? null
+              : (v) => setState(() => d.enabled = v ?? false),
         ),
         Expanded(
           child: Text(
@@ -424,10 +448,12 @@ class _ShiftTemplateFormScreenState
               alignment: Alignment.centerLeft,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
-            onPressed: () async {
-              final picked = await _pickTime(value);
-              if (picked != null) onPicked(picked);
-            },
+            onPressed: widget.readOnly
+                ? null
+                : () async {
+                    final picked = await _pickTime(value);
+                    if (picked != null) onPicked(picked);
+                  },
             label: Text(_fmt(value),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
@@ -438,13 +464,16 @@ class _ShiftTemplateFormScreenState
 }
 
 /// Otvara formu (cijeli ekran). Forma sama čuva/briše i po uspjehu se zatvara.
+/// Kad je `readOnly` true, otvara se u režimu „samo pregled" (za zaposlene).
 Future<void> showShiftTemplateForm(
   BuildContext context, {
   ShiftTemplateResponse? existing,
+  bool readOnly = false,
 }) {
   return Navigator.of(context).push(
     MaterialPageRoute(
-      builder: (_) => ShiftTemplateFormScreen(existing: existing),
+      builder: (_) =>
+          ShiftTemplateFormScreen(existing: existing, readOnly: readOnly),
     ),
   );
 }

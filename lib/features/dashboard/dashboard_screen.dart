@@ -10,7 +10,6 @@ import '../../services/providers.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets.dart';
 import '../appointments/reminders.dart';
-import '../reports/reports_provider.dart';
 import 'barber_stats_provider.dart';
 
 /// Da li smo na pravom telefonu (za test-dugme notifikacija).
@@ -63,12 +62,6 @@ class DashboardScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
 
-          // ----- Prihod (samo admin) -----
-          if (auth.isAdmin) ...[
-            const _RevenueCard(),
-            const SizedBox(height: 16),
-          ],
-
           // ----- Statistika dana (samo barber / ne-admin) -----
           if (!auth.isAdmin) ...[
             const _BarberStatsCard(),
@@ -76,10 +69,7 @@ class DashboardScreen extends ConsumerWidget {
           ],
 
           // ----- Test notifikacija (privremeno, samo na telefonu) -----
-          if (_isMobile) ...[
-            const _NotificationTestButton(),
-            const SizedBox(height: 16),
-          ],
+        
 
           Text('Brze prečice', style: theme.textTheme.titleMedium),
           const SizedBox(height: 12),
@@ -260,53 +250,6 @@ class _NotificationTestButton extends ConsumerWidget {
           ),
         );
       },
-    );
-  }
-}
-
-/// Kartica sa prihodom salona (posljednjih 30 dana) — vidi je samo admin.
-class _RevenueCard extends ConsumerWidget {
-  const _RevenueCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final summaryAsync = ref.watch(last30DaysRevenueProvider);
-
-    return AsyncValueView<RevenueSummary>(
-      value: summaryAsync,
-      onRetry: () => ref.invalidate(last30DaysRevenueProvider),
-      data: (summary) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Prihod (30 dana)', style: theme.textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    Format.money(summary.totalRevenue),
-                    style: theme.textTheme.headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('Završenih', style: theme.textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  Text('${summary.completedAppointments}',
-                      style: theme.textTheme.headlineSmall),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

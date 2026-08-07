@@ -67,12 +67,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!loggedOut && goingToLogin) return Routes.dashboard;
 
       // Zaštita stranica koje smije samo administrator.
+      // (Radno vrijeme / Šabloni smjena / Dodjela smjena NISU ovdje — zaposleni
+      // ih smije otvoriti u režimu „samo pregled".)
       final adminOnly = {
         Routes.employees,
         Routes.services,
-        Routes.workingHours,
-        Routes.shiftTemplates,
-        Routes.shiftAssignments,
         Routes.reports,
       };
       if (!auth.isAdmin && adminOnly.contains(state.matchedLocation)) {

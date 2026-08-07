@@ -57,10 +57,23 @@ class ReportsScreen extends ConsumerWidget {
     final range = ref.watch(reportRangeProvider);
     final detailedAsync = ref.watch(detailedReportProvider);
     final trendAsync = ref.watch(revenueOverTimeProvider);
+    // „Budući termini" gledamo NA NIVOU EKRANA (ne samo unutar sekcije) da
+    // provider ostane živ dok skrolamo — inače se (autoDispose) svaki put pri
+    // povratku u vidokrug ponovo učita (makazice). Ekran ostaje živ dok smo na
+    // stranici, pa se učita jednom.
+    final upcomingAsync = ref.watch(upcomingReportProvider);
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // ---- Budući (zakazani) termini ----
+        _UpcomingSection(reportAsync: upcomingAsync),
+        const Divider(height: 40),
+
+        // ---- Ostvareno (izabrani prošli period) ----
+        Text('Ostvareno (izabrani period)',
+            style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
         // ---- Brzi periodi ----
         const _QuickPeriods(),
         const SizedBox(height: 8),
@@ -205,6 +218,197 @@ class _QuickPeriods extends ConsumerWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+// ===================== BUDUĆI TERMINI (sekcija) =====================
+
+/// „Sljedeći termin" kratko: „27.07. 10:00" (ili „—").
+String _nextLabel(DateTime? d) =>
+    d == null ? '—' : '${_two(d.day)}.${_two(d.month)}. ${Format.time(d)}';
+
+/// Sekcija „Budući termini": izbor budućeg perioda + zbir + tabela po barberu.
+class _UpcomingSection extends ConsumerWidget {
+  final AsyncValue<UpcomingReport> reportAsync;
+  const _UpcomingSection({required this.reportAsync});
+
+  Future<void> _pickRange(BuildContext context, WidgetRef ref) async {
+    final now = DateTime.now();
+    final current = ref.read(upcomingRangeProvider);
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: current,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 1, 12, 31), // budući datumi dozvoljeni
+    );
+    if (picked != null) {
+      ref.read(upcomingRangeProvider.notifier).state = picked;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final range = ref.watch(upcomingRangeProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Budući termini (zakazano)', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 8),
+        const _UpcomingPeriods(),
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.event_available),
+            title: const Text('Period'),
+            subtitle: Text(
+              '${Format.date(range.start)} — ${Format.date(range.end)}',
+            ),
+            trailing: TextButton(
+              onPressed: () => _pickRange(context, ref),
+              child: const Text('Promijeni'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        AsyncValueView<UpcomingReport>(
+          value: reportAsync,
+          onRetry: () => ref.invalidate(upcomingReportProvider),
+          data: (r) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _UpcomingSummaryCard(report: r),
+              const SizedBox(height: 12),
+              if (r.barbers.isEmpty)
+                const EmptyView(
+                    message: 'Nema zakazanih termina u ovom periodu.')
+              else
+                _ReportTable(
+                  headers: const [
+                    'Barber',
+                    'Zakazano',
+                    'Očekivano',
+                    'Sljedeći',
+                  ],
+                  rows: [
+                    for (final b in r.barbers)
+                      [
+                        b.name,
+                        '${b.scheduled}',
+                        Format.money(b.expectedRevenue),
+                        _nextLabel(b.nextStart),
+                      ],
+                    [
+                      'UKUPNO',
+                      '${r.totalScheduled}',
+                      Format.money(r.expectedRevenue),
+                      '',
+                    ],
+                  ],
+                  boldRows: {r.barbers.length}, // posljednji red = UKUPNO
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Brzi izbor budućeg perioda.
+class _UpcomingPeriods extends ConsumerWidget {
+  const _UpcomingPeriods();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void set(DateTimeRange r) =>
+        ref.read(upcomingRangeProvider.notifier).state = r;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    return Wrap(
+      spacing: 8,
+      children: [
+        ActionChip(
+          label: const Text('Sljedećih 7 dana'),
+          onPressed: () => set(
+              DateTimeRange(start: today, end: today.add(const Duration(days: 7)))),
+        ),
+        ActionChip(
+          label: const Text('Sljedećih 30 dana'),
+          onPressed: () => set(DateTimeRange(
+              start: today, end: today.add(const Duration(days: 30)))),
+        ),
+        ActionChip(
+          label: const Text('Sljedeći mjesec'),
+          onPressed: () => set(DateTimeRange(
+            start: DateTime(now.year, now.month + 1, 1),
+            end: DateTime(now.year, now.month + 2, 1),
+          )),
+        ),
+      ],
+    );
+  }
+}
+
+/// Zbirna kartica budućih termina: ukupno zakazano + očekivani prihod + najprometniji dan.
+class _UpcomingSummaryCard extends StatelessWidget {
+  final UpcomingReport report;
+
+  const _UpcomingSummaryCard({required this.report});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final busiest = report.busiestDay;
+
+    Widget stat(String label, String value) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Text(value,
+                style: theme.textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+          ],
+        );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                stat('Zakazano ukupno', '${report.totalScheduled}'),
+                stat('Očekivani prihod', Format.money(report.expectedRevenue)),
+              ],
+            ),
+            if (busiest != null) ...[
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Icon(Icons.local_fire_department_outlined,
+                      size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Najprometniji dan: ${Format.date(busiest.key)} '
+                      '(${busiest.value} ${busiest.value == 1 ? 'termin' : 'termina'})',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -529,7 +733,7 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-/// Tabela po barberu: brojevi po statusu + prihod.
+/// Tabela po barberu: brojevi po statusu + prihod + procenat i ostatak salonu.
 class _BarberTable extends StatelessWidget {
   final DetailedReport report;
 
@@ -537,6 +741,10 @@ class _BarberTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Zbir „ostaje salonu" po svim barberima (za red UKUPNO).
+    final totalSalonKeep =
+        report.barbers.fold<double>(0, (s, b) => s + b.salonKeep);
+
     return _ReportTable(
       headers: const [
         'Barber',
@@ -546,6 +754,8 @@ class _BarberTable extends StatelessWidget {
         'Nije se pojavio',
         'Ukupno',
         'Prihod',
+        'Procenat',
+        'Ostaje salonu',
       ],
       rows: [
         for (final b in report.barbers)
@@ -557,6 +767,8 @@ class _BarberTable extends StatelessWidget {
             '${b.counts.noShow}',
             '${b.counts.total}',
             Format.money(b.revenue),
+            _pctLabel(b.commission),
+            Format.money(b.salonKeep),
           ],
         [
           'UKUPNO',
@@ -566,6 +778,8 @@ class _BarberTable extends StatelessWidget {
           '${report.overall.noShow}',
           '${report.overall.total}',
           Format.money(report.totalRevenue),
+          '',
+          Format.money(totalSalonKeep),
         ],
       ],
       boldRows: {report.barbers.length}, // posljednji red = UKUPNO
@@ -758,6 +972,12 @@ String _fileDate(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
 String _two(int n) => n.toString().padLeft(2, '0');
 String _csvMoney(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
+/// Procenat za prikaz: „50%" (cijeli broj) ili „—" kad nije podešen.
+String _pctLabel(double? c) {
+  if (c == null) return '—';
+  return c % 1 == 0 ? '${c.toInt()}%' : '${c.toStringAsFixed(1)}%';
+}
+
 /// Sastavlja CSV tekst iz detaljnog izvještaja. Separator je „;“.
 String _buildCsv(DetailedReport r, DateTimeRange range) {
   final b = StringBuffer();
@@ -777,12 +997,14 @@ String _buildCsv(DetailedReport r, DateTimeRange range) {
   b.writeln();
 
   b.writeln('PO BARBERU');
-  b.writeln(
-      'Barber;Zakazani;Završeni;Otkazani;Nije se pojavio;Ukupno;Prihod (EUR)');
+  b.writeln('Barber;Zakazani;Završeni;Otkazani;Nije se pojavio;Ukupno;'
+      'Prihod (EUR);Procenat (%);Ostaje salonu (EUR)');
   for (final br in r.barbers) {
+    // Procenat kao broj (bez znaka %) radi lakšeg računa u Excel-u; prazno ako nije podešen.
+    final pct = br.commission == null ? '' : _csvMoney(br.commission!);
     b.writeln('${br.name};${br.counts.scheduled};${br.counts.completed};'
         '${br.counts.cancelled};${br.counts.noShow};${br.counts.total};'
-        '${_csvMoney(br.revenue)}');
+        '${_csvMoney(br.revenue)};$pct;${_csvMoney(br.salonKeep)}');
   }
   b.writeln();
 

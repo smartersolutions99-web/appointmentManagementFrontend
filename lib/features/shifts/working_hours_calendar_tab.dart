@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/exceptions.dart';
 import '../../models/models.dart';
+import '../../services/providers.dart';
 import '../../shared/month_picker.dart';
 import '../../shared/widgets.dart';
 import 'shift_assignments_provider.dart' show ymd;
@@ -371,6 +372,21 @@ class _ActionBar extends ConsumerWidget {
     final count = ref.watch(
         workingHoursCalendarProvider.select((s) => s.selectedDays.length));
     final theme = Theme.of(context);
+    final isAdmin = ref.watch(authControllerProvider).isAdmin;
+
+    // Zaposleni (ne-admin) vidi kalendar samo za pregled — bez akcija.
+    if (!isAdmin) {
+      return const Material(
+        elevation: 8,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: ReadOnlyBanner(),
+          ),
+        ),
+      );
+    }
 
     return Material(
       elevation: 8,
@@ -489,6 +505,7 @@ class _HoursDialogState extends State<_HoursDialog> {
   Future<TimeOfDay?> _pick(TimeOfDay initial) => showTimePicker(
         context: context,
         initialTime: initial,
+        initialEntryMode: TimePickerEntryMode.input, // po difoltu unos brojki
         builder: (ctx, child) => MediaQuery(
           data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
           child: child!,

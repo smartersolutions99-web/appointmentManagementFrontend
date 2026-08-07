@@ -7,9 +7,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 class AppConfig {
   AppConfig._(); // Privatni konstruktor — klasa se koristi samo statički.
 
-  /// Produkcijski backend (Railway).
-  // static const String _railwayUrl =
-  //     'https://appointmentmanagement-production-543b.up.railway.app';
+//   /// Produkcijski backend (Railway).
+//   static const String _railwayUrl =
+//       'https://appointmentmanagement-production-543b.up.railway.app';
   static const String _railwayUrl =
       'https://appointmentmanagement-development.up.railway.app';
 
@@ -31,4 +31,20 @@ class AppConfig {
 
   /// Podrazumijevana veličina stranice za paginaciju (klijenti, termini).
   static const int defaultPageSize = 20;
+
+  /// Adresa JSON fajla sa podacima o najnovijoj verziji (provjera nadogradnje).
+  ///
+  /// Preporuka: napravi JAVNI GitHub repozitorijum samo za izdanja (npr.
+  /// „salon-releases") i u njega postavi `version.json` + instalacione fajlove
+  /// (APK i Windows .exe) kao „Release" priloge. Zamijeni `KORISNIK` svojim
+  /// GitHub korisničkim imenom (i `salon-releases` nazivom repozitorijuma).
+  ///
+  /// Fajl mora biti oblika:
+  /// {
+  ///   "android": { "latestVersion": "1.1.0", "minVersion": "1.0.0", "url": "https://.../salon-1.1.0.apk" },
+  ///   "windows": { "latestVersion": "1.1.0", "minVersion": "1.0.0", "url": "https://.../salon-setup-1.1.0.exe" },
+  ///   "notes": "Šta je novo u ovoj verziji."
+  /// }
+  static const String updateManifestUrl =
+      'https://raw.githubusercontent.com/KORISNIK/salon-releases/main/version.json';
 }

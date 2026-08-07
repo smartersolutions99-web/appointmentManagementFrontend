@@ -90,6 +90,8 @@ class _WeeklyHoursTabState extends ConsumerState<_WeeklyHoursTab> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+  // Zaposleni (ne-admin) vidi radno vrijeme samo za pregled — bez izmjena.
+  bool _readOnly = false;
 
   // „Brzi unos“ — vrijeme koje jednim klikom postavljamo na sve označene dane.
   TimeOfDay _bulkOpen = _defOpen;
@@ -139,6 +141,7 @@ class _WeeklyHoursTabState extends ConsumerState<_WeeklyHoursTab> {
     return showTimePicker(
       context: context,
       initialTime: initial,
+      initialEntryMode: TimePickerEntryMode.input, // po difoltu unos brojki
       builder: (ctx, child) => MediaQuery(
         data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
         child: child!,
@@ -225,6 +228,7 @@ class _WeeklyHoursTabState extends ConsumerState<_WeeklyHoursTab> {
 
   @override
   Widget build(BuildContext context) {
+    _readOnly = !ref.watch(authControllerProvider).isAdmin;
     Widget body;
     if (_days == null) {
       body = _loading
@@ -244,26 +248,32 @@ class _WeeklyHoursTabState extends ConsumerState<_WeeklyHoursTab> {
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         Text(
-          'Označite dane kada je salon otvoren i unesite vrijeme. Neoznačeni dani = zatvoreno.',
+          _readOnly
+              ? 'Pregled radnog vremena salona po danima.'
+              : 'Označite dane kada je salon otvoren i unesite vrijeme. Neoznačeni dani = zatvoreno.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
-        _buildBulkCard(),
-        const SizedBox(height: 8),
+        if (_readOnly) const ReadOnlyBanner(),
+        if (!_readOnly) ...[
+          _buildBulkCard(),
+          const SizedBox(height: 8),
+        ],
         for (final day in WeekDay.values) _buildDayRow(day, days[day]!),
         const SizedBox(height: 20),
-        // Puna širina je bezbjedna (u tijelu je, ograničena širina).
-        FilledButton.icon(
-          onPressed: _saving ? null : _save,
-          icon: _saving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.check),
-          label: const Text('Sačuvaj'),
-        ),
+        // Dugme „Sačuvaj" postoji samo za administratora.
+        if (!_readOnly)
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check),
+            label: const Text('Sačuvaj'),
+          ),
       ],
     );
   }
@@ -316,7 +326,8 @@ class _WeeklyHoursTabState extends ConsumerState<_WeeklyHoursTab> {
       children: [
         Checkbox(
           value: d.enabled,
-          onChanged: (v) => setState(() => d.enabled = v ?? false),
+          onChanged:
+              _readOnly ? null : (v) => setState(() => d.enabled = v ?? false),
         ),
         Expanded(
           child: Text(
@@ -397,10 +408,12 @@ class _WeeklyHoursTabState extends ConsumerState<_WeeklyHoursTab> {
               alignment: Alignment.centerLeft,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
-            onPressed: () async {
-              final picked = await _pickTime(value);
-              if (picked != null) onPicked(picked);
-            },
+            onPressed: _readOnly
+                ? null
+                : () async {
+                    final picked = await _pickTime(value);
+                    if (picked != null) onPicked(picked);
+                  },
             label: Text(_fmt(value),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
           ),

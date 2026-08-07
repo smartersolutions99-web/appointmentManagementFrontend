@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/appointments/reminders.dart';
+import '../features/update/update_gate.dart';
 import '../services/providers.dart';
 import 'app_router.dart';
 
@@ -25,13 +26,12 @@ const _allItems = <_NavItem>[
   _NavItem(Routes.preparati, Icons.inventory_2_outlined, 'Preparati'),
   _NavItem(Routes.employees, Icons.badge_outlined, 'Zaposleni', adminOnly: true),
   _NavItem(Routes.services, Icons.content_cut, 'Usluge', adminOnly: true),
-  _NavItem(Routes.workingHours, Icons.access_time, 'Radno vrijeme',
-      adminOnly: true),
-  _NavItem(Routes.shiftTemplates, Icons.calendar_view_week, 'Šabloni smjena',
-      adminOnly: true),
+  // Radno vrijeme, Šabloni smjena i Dodjela smjena: zaposleni ih vidi u režimu
+  // „samo pregled" (bez izmjena) — zato NISU više adminOnly.
+  _NavItem(Routes.workingHours, Icons.access_time, 'Radno vrijeme'),
+  _NavItem(Routes.shiftTemplates, Icons.calendar_view_week, 'Šabloni smjena'),
   _NavItem(Routes.shiftAssignments, Icons.assignment_ind_outlined,
-      'Dodjela smjena',
-      adminOnly: true),
+      'Dodjela smjena'),
   _NavItem(Routes.reports, Icons.bar_chart_outlined, 'Izvještaji', adminOnly: true),
 ];
 
@@ -130,7 +130,7 @@ class AppShell extends ConsumerWidget {
                   title: Text(currentTitle),
                   actions: [logoutButton],
                 ),
-                body: RemindersController(child: child),
+                body: UpdateGate(child: RemindersController(child: child)),
               ),
             ),
           ],
@@ -160,7 +160,7 @@ class AppShell extends ConsumerWidget {
             ),
         ],
       ),
-      body: RemindersController(child: child),
+      body: UpdateGate(child: RemindersController(child: child)),
     );
   }
 }
