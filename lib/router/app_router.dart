@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/appointments/appointments_screen.dart';
+import '../features/appointments/suspicious_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/password_gate.dart';
 import '../features/customers/customers_screen.dart';
@@ -17,6 +18,7 @@ import '../features/shifts/shift_assignments_screen.dart';
 import '../features/shifts/shift_templates_screen.dart';
 import '../features/shifts/working_hours_screen.dart';
 import '../features/suppliers/suppliers_screen.dart';
+import '../features/tips/tips_screen.dart';
 import '../services/auth_controller.dart';
 import '../services/providers.dart';
 import 'app_shell.dart';
@@ -38,6 +40,8 @@ class Routes {
   static const shiftTemplates = '/shift-templates';
   static const shiftAssignments = '/shift-assignments';
   static const reports = '/reports';
+  static const tips = '/tips';
+  static const suspicious = '/suspicious';
 }
 
 /// Provider koji pravi GoRouter i povezuje ga sa stanjem prijave.
@@ -73,6 +77,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         Routes.employees,
         Routes.services,
         Routes.reports,
+        Routes.suspicious,
       };
       if (!auth.isAdmin && adminOnly.contains(state.matchedLocation)) {
         return Routes.dashboard;
@@ -153,6 +158,14 @@ final routerProvider = Provider<GoRouter>((ref) {
               title: 'Izvještaji',
               child: ReportsScreen(),
             ),
+          ),
+          GoRoute(
+            path: Routes.tips,
+            builder: (context, state) => const TipsScreen(),
+          ),
+          GoRoute(
+            path: Routes.suspicious,
+            builder: (context, state) => const SuspiciousScreen(),
           ),
         ],
       ),

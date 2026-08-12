@@ -127,3 +127,13 @@ final customersControllerProvider =
     StateNotifierProvider<CustomersController, CustomersState>((ref) {
   return CustomersController(ref.watch(apiServiceProvider));
 });
+
+/// Statistika jednog klijenta (po id-u) — za detalj klijenta (potrošeno, brojevi
+/// po statusu, alert za česte no-show).
+final customerStatsProvider = FutureProvider.autoDispose
+    .family<CustomerStatsResponse, int>((ref, id) {
+  return ref.watch(apiServiceProvider).getCustomerStats(id);
+});
+
+/// Prag za upozorenje „čest no-show" na detalju klijenta.
+const int kFrequentNoShowThreshold = 3;

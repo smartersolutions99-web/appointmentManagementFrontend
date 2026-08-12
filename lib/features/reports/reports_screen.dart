@@ -2,11 +2,18 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/exceptions.dart';
 import '../../models/models.dart';
+import '../../services/providers.dart';
 import '../../shared/file_download.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets.dart';
 import '../appointments/barber_colors.dart';
+import '../appointments/day_schedule_provider.dart'
+    show isBreakNote, customerDirectoryProvider;
+import '../employees/employees_provider.dart';
+import '../services/services_provider.dart';
+import 'report_export.dart';
 import 'reports_provider.dart';
 
 /// Ekran sa izvještajima (samo za administratore).
@@ -26,8 +33,8 @@ class ReportsScreen extends ConsumerWidget {
     }
   }
 
-  /// Sastavi CSV i pokreni preuzimanje/čuvanje (otvara se u Excel-u).
-  /// Web: browser preuzima fajl. Desktop: snima ga u folder Downloads.
+  /// Sastavi zbirni .xlsx (Ukupno + Po uslugama + sheet po zaposlenom) i pokreni
+  /// preuzimanje/čuvanje. Web: browser preuzima fajl. Desktop: snima u Downloads.
   Future<void> _export(BuildContext context, WidgetRef ref) async {
     final report = ref.read(detailedReportProvider).value;
     final range = ref.read(reportRangeProvider);
@@ -36,10 +43,10 @@ class ReportsScreen extends ConsumerWidget {
       return;
     }
     try {
-      final csv = _buildCsv(report, range);
+      final bytes = buildSummaryWorkbook(report, range);
       final name =
-          'izvjestaj_${_fileDate(range.start)}_${_fileDate(range.end)}.csv';
-      final path = await downloadTextFile(name, csv);
+          'izvjestaj_${_fileDate(range.start)}_${_fileDate(range.end)}.xlsx';
+      final path = await downloadBytesFile(name, bytes);
       if (!context.mounted) return;
       showSnack(
         context,
@@ -50,6 +57,152 @@ class ReportsScreen extends ConsumerWidget {
         showSnack(context, 'Greška pri exportu: $e', isError: true);
       }
     }
+  }
+
+  /// „Detaljni izvještaj": .xlsx sa SVIM terminima (svi podaci) za izabrane
+  /// zaposlene i tekući period. Prvo bira zaposlene, pa učita i sastavi fajl.
+  Future<void> _exportDetailed(BuildContext context, WidgetRef ref) async {
+    // Lista zaposlenih (za izbor kojih uključiti).
+    List<EmployeeResponse> employees;
+    try {
+      employees = await ref.read(employeesProvider.future);
+    } catch (e) {
+      if (context.mounted) {
+        showSnack(context, ApiException.from(e).message, isError: true);
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    if (employees.isEmpty) {
+      showSnack(context, 'Nema zaposlenih.', isError: true);
+      return;
+    }
+
+    // Izbor zaposlenih (podrazumijevano svi). Vraća listu id-jeva ili null (otkaz).
+    final selected = await showDialog<List<int>>(
+      context: context,
+      builder: (_) => _EmployeePickerDialog(employees: employees),
+    );
+    if (selected == null || selected.isEmpty) return;
+
+    // Blokirajući indikator dok se učitava i sastavlja (može potrajati par sekundi).
+    if (!context.mounted) return;
+    // Zapamti messenger i ROOT navigator PRIJE async posla — `showDialog` gura
+    // dijalog na root navigator, pa ga i zatvaramo preko njega (inače bi se
+    // zatvorio pogrešan ekran i aplikacija bi prijavila grešku).
+    final messenger = ScaffoldMessenger.of(context);
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    var progressOpen = true;
+    void closeProgress() {
+      if (progressOpen) {
+        progressOpen = false;
+        rootNav.pop();
+      }
+    }
+
+    try {
+      final range = ref.read(reportRangeProvider);
+      final rows = await _fetchDetailedRows(ref, range, selected.toSet());
+      final bytes = buildDetailedWorkbook(rows, range: range);
+      final name =
+          'termini_detaljno_${_fileDate(range.start)}_${_fileDate(range.end)}.xlsx';
+      final path = await downloadBytesFile(name, bytes);
+      closeProgress();
+      messenger.showSnackBar(SnackBar(
+        content: Text(
+          path != null
+              ? 'Sačuvano: $path (${rows.length} termina)'
+              : 'Izvještaj preuzet: $name (${rows.length} termina)',
+        ),
+      ));
+    } catch (e) {
+      closeProgress();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Greška pri exportu: ${ApiException.from(e).message}'),
+        backgroundColor: Colors.redAccent,
+      ));
+    }
+  }
+
+  /// Učita sve termine za period, spoji imena (barber/klijent/usluga) i vrati
+  /// redove za izabrane zaposlene. Pauze se preskaču.
+  Future<List<DetailedApptRow>> _fetchDetailedRows(
+    WidgetRef ref,
+    DateTimeRange range,
+    Set<int> employeeIds,
+  ) async {
+    final api = ref.read(apiServiceProvider);
+
+    // Svi termini u periodu (kroz stranice).
+    final all = <AppointmentResponse>[];
+    var page = 0;
+    while (true) {
+      final p = await api.getAppointments(
+        from: range.start.toUtc().toIso8601String(),
+        to: range.end.toUtc().toIso8601String(),
+        page: page,
+        size: 200,
+        sort: 'startTime,asc',
+      );
+      all.addAll(p.content);
+      if (p.last || p.content.isEmpty) break;
+      page++;
+      if (page > 100) break;
+    }
+
+    // Imena barbera.
+    final employees = await ref.read(employeesProvider.future);
+    final nameById = {for (final e in employees) e.id: e.name};
+
+    // Imena usluga (ako ne uspije — bez naziva).
+    List<ServiceEntityResponse> services;
+    try {
+      services = await ref.read(servicesProvider.future);
+    } catch (_) {
+      services = const [];
+    }
+    final serviceNameById = {for (final s in services) s.id: s.name};
+
+    // Adresar klijenata (ime + telefon) — ako ne uspije, koristimo podatke sa termina.
+    List<CustomerResponse> customers;
+    try {
+      customers = await ref.read(customerDirectoryProvider.future);
+    } catch (_) {
+      customers = const [];
+    }
+    final customerById = {for (final c in customers) c.id: c};
+
+    final rows = <DetailedApptRow>[];
+    for (final a in all) {
+      if (isBreakNote(a.note)) continue; // pauze nisu pravi termini
+      if (a.employeeId == null || !employeeIds.contains(a.employeeId)) continue;
+      final start = a.startTime?.toLocal();
+      final end = a.endTime?.toLocal() ??
+          (start != null && a.duration != null
+              ? start.add(Duration(minutes: a.duration!))
+              : null);
+      final cust = a.customerId != null ? customerById[a.customerId] : null;
+      rows.add(DetailedApptRow(
+        employeeId: a.employeeId,
+        start: start,
+        end: end,
+        barber: nameById[a.employeeId] ?? 'Zaposleni ${a.employeeId}',
+        customer: a.customerName ?? cust?.name ?? '',
+        phone: a.customerPhone ?? cust?.contactValue ?? '',
+        service: serviceNameById[a.serviceId] ?? '',
+        price: a.servicePrice ?? 0,
+        duration: a.duration,
+        status: a.status ?? AppointmentStatus.scheduled,
+        note: a.note ?? '',
+      ));
+    }
+    return rows;
   }
 
   @override
@@ -95,10 +248,22 @@ class ReportsScreen extends ConsumerWidget {
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerRight,
-          child: FilledButton.tonalIcon(
-            onPressed: () => _export(context, ref),
-            icon: const Icon(Icons.download),
-            label: const Text('Izvezi u Excel (CSV)'),
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _exportDetailed(context, ref),
+                icon: const Icon(Icons.list_alt),
+                label: const Text('Detaljni izvještaj'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => _export(context, ref),
+                icon: const Icon(Icons.download),
+                label: const Text('Izvezi u Excel'),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
@@ -966,11 +1131,10 @@ class _RevenueBar extends StatelessWidget {
   }
 }
 
-// ---- Pomoćne funkcije za CSV export ----
+// ---- Pomoćne funkcije za export ----
 
 String _fileDate(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
 String _two(int n) => n.toString().padLeft(2, '0');
-String _csvMoney(double v) => v.toStringAsFixed(2).replaceAll('.', ',');
 
 /// Procenat za prikaz: „50%" (cijeli broj) ili „—" kad nije podešen.
 String _pctLabel(double? c) {
@@ -978,40 +1142,97 @@ String _pctLabel(double? c) {
   return c % 1 == 0 ? '${c.toInt()}%' : '${c.toStringAsFixed(1)}%';
 }
 
-/// Sastavlja CSV tekst iz detaljnog izvještaja. Separator je „;“.
-String _buildCsv(DetailedReport r, DateTimeRange range) {
-  final b = StringBuffer();
-  b.writeln('Izvještaj salona');
-  b.writeln('Period;${Format.date(range.start)} - ${Format.date(range.end)}');
-  b.writeln();
+/// Dijalog za izbor zaposlenih za „Detaljni izvještaj". Podrazumijevano su svi
+/// izabrani. Vraća listu id-jeva (ili `null` na otkaz).
+class _EmployeePickerDialog extends StatefulWidget {
+  final List<EmployeeResponse> employees;
 
-  b.writeln('UKUPNO');
-  b.writeln('Status;Broj');
-  b.writeln('Zakazani;${r.overall.scheduled}');
-  b.writeln('Završeni;${r.overall.completed}');
-  b.writeln('Otkazani;${r.overall.cancelled}');
-  b.writeln('Nije se pojavio;${r.overall.noShow}');
-  b.writeln('Ukupno termina;${r.overall.total}');
-  b.writeln('Ukupan prihod (EUR);${_csvMoney(r.totalRevenue)}');
-  b.writeln('Prosjecan racun (EUR);${_csvMoney(r.averageTicket)}');
-  b.writeln();
+  const _EmployeePickerDialog({required this.employees});
 
-  b.writeln('PO BARBERU');
-  b.writeln('Barber;Zakazani;Završeni;Otkazani;Nije se pojavio;Ukupno;'
-      'Prihod (EUR);Procenat (%);Ostaje salonu (EUR)');
-  for (final br in r.barbers) {
-    // Procenat kao broj (bez znaka %) radi lakšeg računa u Excel-u; prazno ako nije podešen.
-    final pct = br.commission == null ? '' : _csvMoney(br.commission!);
-    b.writeln('${br.name};${br.counts.scheduled};${br.counts.completed};'
-        '${br.counts.cancelled};${br.counts.noShow};${br.counts.total};'
-        '${_csvMoney(br.revenue)};$pct;${_csvMoney(br.salonKeep)}');
+  @override
+  State<_EmployeePickerDialog> createState() => _EmployeePickerDialogState();
+}
+
+class _EmployeePickerDialogState extends State<_EmployeePickerDialog> {
+  late final Set<int> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    // Podrazumijevano: svi zaposleni izabrani.
+    _selected = {
+      for (final e in widget.employees)
+        if (e.id != null) e.id!,
+    };
   }
-  b.writeln();
 
-  b.writeln('PO USLUZI');
-  b.writeln('Usluga;Broj;Prihod (EUR)');
-  for (final s in r.services) {
-    b.writeln('${s.name};${s.count};${_csvMoney(s.revenue)}');
+  bool get _allSelected => _selected.length ==
+      widget.employees.where((e) => e.id != null).length;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Detaljni izvještaj — zaposleni'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Izaberite za koje zaposlene se pravi izvještaj.'),
+            const SizedBox(height: 8),
+            // „Svi zaposleni" prekidač (čekiraj/odčekiraj sve).
+            CheckboxListTile(
+              dense: true,
+              value: _allSelected,
+              title: const Text('Svi zaposleni',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              onChanged: (v) => setState(() {
+                _selected.clear();
+                if (v ?? false) {
+                  for (final e in widget.employees) {
+                    if (e.id != null) _selected.add(e.id!);
+                  }
+                }
+              }),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final e in widget.employees)
+                    if (e.id != null)
+                      CheckboxListTile(
+                        dense: true,
+                        value: _selected.contains(e.id),
+                        title: Text(e.name ?? 'Zaposleni ${e.id}'),
+                        onChanged: (v) => setState(() {
+                          if (v ?? false) {
+                            _selected.add(e.id!);
+                          } else {
+                            _selected.remove(e.id!);
+                          }
+                        }),
+                      ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Otkaži'),
+        ),
+        FilledButton(
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.pop(context, _selected.toList()),
+          child: const Text('Generiši'),
+        ),
+      ],
+    );
   }
-  return b.toString();
 }

@@ -92,6 +92,27 @@ Future<AppointmentRequest?> showAppointmentForm(
           });
         }
 
+        // Kad se izabere postojeći klijent (i termin je NOV), predloži uslugu i
+        // cijenu sa poslednjeg ZAVRŠENOG termina klijenta. Na 204/grešku — bez prefila.
+        Future<void> prefillLastService(int? id) async {
+          if (id == null || isEdit) return;
+          try {
+            final last = await api.getLastService(id);
+            if (last == null || !context.mounted) return;
+            setState(() {
+              if (last.serviceId != null &&
+                  services.any((s) => s.id == last.serviceId)) {
+                serviceId = last.serviceId;
+              }
+              if (last.servicePrice != null) {
+                price.text = last.servicePrice!.toString();
+              }
+            });
+          } catch (_) {
+            // nema prefila
+          }
+        }
+
         return AlertDialog(
           title: Text(isEdit ? 'Izmjena termina' : 'Novi termin'),
           content: SizedBox(
@@ -127,7 +148,10 @@ Future<AppointmentRequest?> showAppointmentForm(
                       otherController: phone,
                       label: 'Ime klijenta',
                       byPhone: false,
-                      onCustomerSelected: (id) => customerId = id,
+                      onCustomerSelected: (id) {
+                        customerId = id;
+                        prefillLastService(id);
+                      },
                     ),
                     const SizedBox(height: 12),
                     CustomerAutocompleteField(
@@ -137,7 +161,10 @@ Future<AppointmentRequest?> showAppointmentForm(
                       otherController: customerName,
                       label: 'Telefon klijenta',
                       byPhone: true,
-                      onCustomerSelected: (id) => customerId = id,
+                      onCustomerSelected: (id) {
+                        customerId = id;
+                        prefillLastService(id);
+                      },
                     ),
                     const SizedBox(height: 12),
                     // Prikaz izabranog vremena + dugme za izmjenu.

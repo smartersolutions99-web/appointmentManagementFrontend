@@ -32,7 +32,29 @@ Future<AppointmentRequest?> showSlotBookingForm(
   return showDialog<AppointmentRequest>(
     context: context,
     builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
+      builder: (context, setState) {
+        // Kad se izabere postojeći klijent, predloži uslugu i cijenu sa njegovog
+        // poslednjeg ZAVRŠENOG termina. Na 204/grešku — bez prefila.
+        Future<void> prefillLastService(int? id) async {
+          if (id == null) return;
+          try {
+            final last = await api.getLastService(id);
+            if (last == null || !context.mounted) return;
+            setState(() {
+              if (last.serviceId != null &&
+                  services.any((s) => s.id == last.serviceId)) {
+                serviceId = last.serviceId;
+              }
+              if (last.servicePrice != null) {
+                price.text = last.servicePrice!.toString();
+              }
+            });
+          } catch (_) {
+            // nema prefila
+          }
+        }
+
+        return AlertDialog(
         title: const Text('Zakaži termin'),
         content: SizedBox(
           width: 400,
@@ -65,7 +87,10 @@ Future<AppointmentRequest?> showSlotBookingForm(
                     otherController: phone,
                     label: 'Ime i prezime',
                     byPhone: false,
-                    onCustomerSelected: (id) => customerId = id,
+                    onCustomerSelected: (id) {
+                      customerId = id;
+                      prefillLastService(id);
+                    },
                   ),
                   const SizedBox(height: 12),
                   CustomerAutocompleteField(
@@ -75,7 +100,10 @@ Future<AppointmentRequest?> showSlotBookingForm(
                     otherController: name,
                     label: 'Telefon',
                     byPhone: true,
-                    onCustomerSelected: (id) => customerId = id,
+                    onCustomerSelected: (id) {
+                      customerId = id;
+                      prefillLastService(id);
+                    },
                   ),
                   const SizedBox(height: 12),
                   // Izbor usluge — kad se izabere, automatski popuni cijenu.
@@ -154,7 +182,8 @@ Future<AppointmentRequest?> showSlotBookingForm(
             child: const Text('Zakaži'),
           ),
         ],
-      ),
+        );
+      },
     ),
   );
 }

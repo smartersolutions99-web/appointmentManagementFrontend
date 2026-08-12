@@ -46,5 +46,5 @@ class AppConfig {
   ///   "notes": "Šta je novo u ovoj verziji."
   /// }
   static const String updateManifestUrl =
-      'https://raw.githubusercontent.com/KORISNIK/salon-releases/main/version.json';
+      'https://raw.githubusercontent.com/smartersolutions99-web/AppointmentManagementApps/main/version.json';
 }

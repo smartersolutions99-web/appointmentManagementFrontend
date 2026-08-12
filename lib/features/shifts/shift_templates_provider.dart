@@ -7,6 +7,7 @@ import '../../core/exceptions.dart';
 import '../../models/models.dart';
 import '../../services/api_service.dart';
 import '../../services/providers.dart';
+import 'shift_assignments_provider.dart' show allShiftTemplatesProvider;
 
 /// Stanje liste šablona smjena: paginacija (beskonačni skrol) + pretraga.
 /// (Isti obrazac kao kod dobavljača/proizvoda.)
@@ -53,9 +54,11 @@ class ShiftTemplatesState {
 /// Kontroler za šablone smjena: učitavanje po stranicama, pretraga, CRUD.
 class ShiftTemplatesController extends StateNotifier<ShiftTemplatesState> {
   final ApiService _api;
+  final Ref _ref; // za osvježavanje liste šablona u formi dodjele smjene
   Timer? _debounce;
 
-  ShiftTemplatesController(this._api) : super(const ShiftTemplatesState()) {
+  ShiftTemplatesController(this._api, this._ref)
+      : super(const ShiftTemplatesState()) {
     loadFirstPage();
   }
 
@@ -117,18 +120,23 @@ class ShiftTemplatesController extends StateNotifier<ShiftTemplatesState> {
   }
 
   // CRUD — greške se namjerno NE hvataju ovdje, nego u formi (koja prikaže poruku).
+  // Nakon svake izmjene osvježavamo i `allShiftTemplatesProvider` (padajuća lista
+  // šablona u formi dodjele smjene), da tamo ne ostane stara vrijednost.
   Future<void> create(ShiftTemplateRequest request) async {
     await _api.createShiftTemplate(request);
+    _ref.invalidate(allShiftTemplatesProvider);
     await loadFirstPage();
   }
 
   Future<void> update(int id, ShiftTemplateRequest request) async {
     await _api.updateShiftTemplate(id, request);
+    _ref.invalidate(allShiftTemplatesProvider);
     await loadFirstPage();
   }
 
   Future<void> delete(int id) async {
     await _api.deleteShiftTemplate(id);
+    _ref.invalidate(allShiftTemplatesProvider);
     await loadFirstPage();
   }
 
@@ -141,5 +149,5 @@ class ShiftTemplatesController extends StateNotifier<ShiftTemplatesState> {
 
 final shiftTemplatesControllerProvider =
     StateNotifierProvider<ShiftTemplatesController, ShiftTemplatesState>((ref) {
-  return ShiftTemplatesController(ref.watch(apiServiceProvider));
+  return ShiftTemplatesController(ref.watch(apiServiceProvider), ref);
 });

@@ -105,6 +105,21 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
   bool get _salonClosedToday =>
       ref.read(salonClosedForDayProvider).valueOrNull ?? false;
 
+  /// Da li je barber čiji pojedinačni raspored gledamo „slobodan" tog dana.
+  /// Tada mu se zakazivanje NE nudi (iako salon radi).
+  bool get _selectedBarberOffToday =>
+      ref.read(selectedBarberOffProvider).valueOrNull ?? false;
+
+  /// Poruka + `true` kad je izabrani barber slobodan tog dana (pozivalac prekida).
+  bool _blockIfBarberOff() {
+    if (_selectedBarberOffToday) {
+      showSnack(context, 'Barber je slobodan ovog dana — zakazivanje nije moguće.',
+          isError: true);
+      return true;
+    }
+    return false;
+  }
+
   /// Ako je salon zatvoren tog dana, javi i vrati `true` (pozivalac prekida).
   bool _blockIfSalonClosed() {
     if (_salonClosedToday) {
@@ -118,6 +133,7 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
   /// Tap na slobodan slot: prvi = početak, drugi = kraj (opseg).
   void _onTapFree(List<ScheduleSlot> slots, int index) {
     if (_blockIfSalonClosed()) return;
+    if (_blockIfBarberOff()) return;
     setState(() {
       if (_anchor == null) {
         _anchor = index;
@@ -168,6 +184,14 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
   /// (samo ako su svi slotovi između slobodni kod tog barbera).
   void _onTapBoardFree(AllDaySchedule schedule, int barberId, int index) {
     if (_blockIfSalonClosed()) return;
+    // Barber označen kao „slobodan dan" — ne dozvoljavamo zakazivanje.
+    final offIds =
+        ref.read(offEmployeesForDayProvider).valueOrNull ?? const <int>{};
+    if (offIds.contains(barberId)) {
+      showSnack(context, 'Barber je slobodan ovog dana — zakazivanje nije moguće.',
+          isError: true);
+      return;
+    }
     final col = schedule.boardColumns[barberId];
     if (col == null) return;
     setState(() {
@@ -630,6 +654,11 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
                 title: const Text('Izmijeni termin'),
                 onTap: () => Navigator.pop(ctx, 'edit'),
               ),
+              ListTile(
+                leading: const Icon(Icons.savings_outlined),
+                title: const Text('Dodaj bakšiš'),
+                onTap: () => Navigator.pop(ctx, 'tip'),
+              ),
               const Divider(height: 1),
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -680,6 +709,12 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     // Izmjena svih stavki termina.
     if (result == 'edit') {
       await _editAppointment(appt);
+      return;
+    }
+
+    // Dodavanje bakšiša za ovaj termin.
+    if (result == 'tip') {
+      await _addTip(appt);
       return;
     }
 
@@ -782,6 +817,184 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     }
   }
 
+  /// Dodaj bakšiš za konkretan termin (PUT /api/tips/appointment/{id}).
+  /// Zaposleni i datum se izvode iz termina na serveru.
+  Future<void> _addTip(AppointmentResponse appt) async {
+    final id = appt.id;
+    if (id == null) return;
+    final amount = TextEditingController();
+    final note = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Dodaj bakšiš'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amount,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Iznos (€)', prefixIcon: Icon(Icons.euro)),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: note,
+              decoration:
+                  const InputDecoration(labelText: 'Napomena (opciono)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Otkaži')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Sačuvaj')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final value = double.tryParse(amount.text.replaceAll(',', '.'));
+    if (value == null || value < 0) {
+      if (mounted) showSnack(context, 'Unesite ispravan iznos.', isError: true);
+      return;
+    }
+    try {
+      await ref.read(apiServiceProvider).putAppointmentTip(
+            id,
+            TipAppointmentRequest(
+              amount: value,
+              note: note.text.trim().isEmpty ? null : note.text.trim(),
+            ),
+          );
+      if (mounted) showSnack(context, 'Bakšiš dodat.');
+    } catch (e) {
+      if (mounted) {
+        showSnack(context, ApiException.from(e).message, isError: true);
+      }
+    }
+  }
+
+  /// Bakšiš za trenutno prikazanog barbera (u prikazu JEDNOG barbera):
+  /// admin → izabrani barber; zaposleni → on sam (server ga zna iz tokena).
+  void _addTipForCurrentBarber() {
+    final auth = ref.read(authControllerProvider);
+    final id = auth.isAdmin
+        ? (ref.read(scheduleEmployeeProvider) ?? auth.employeeId)
+        : auth.employeeId;
+    if (id == null) {
+      showSnack(context, 'Nije poznat barber za bakšiš.', isError: true);
+      return;
+    }
+    // Ime za naslov dijaloga — samo admin ima listu zaposlenih (barber je nema).
+    String? name;
+    if (auth.isAdmin) {
+      final employees = ref.read(employeesProvider).valueOrNull;
+      if (employees != null) {
+        for (final e in employees) {
+          if (e.id == id) {
+            name = e.name;
+            break;
+          }
+        }
+      }
+    }
+    _addDailyTipFor(id, name);
+  }
+
+  /// Unos DNEVNOG ukupnog bakšiša za jednog barbera (dugme u zaglavlju kolone
+  /// „Pregled" ili u gornjoj traci prikaza jednog barbera). Datum je
+  /// podrazumijevano trenutno prikazani dan (može se mijenjati).
+  Future<void> _addDailyTipFor(int barberId, String? barberName) async {
+    final amount = TextEditingController();
+    final note = TextEditingController();
+    var date = ref.read(scheduleDateProvider);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: Text(
+              barberName != null ? 'Bakšiš — $barberName' : 'Dnevni bakšiš'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.calendar_today),
+                title: const Text('Datum'),
+                subtitle: Text(Format.date(date)),
+                trailing: TextButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: ctx,
+                      initialDate: date,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 1)),
+                    );
+                    if (picked != null) setLocal(() => date = picked);
+                  },
+                  child: const Text('Izmijeni'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: amount,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Iznos (€)', prefixIcon: Icon(Icons.euro)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: note,
+                decoration:
+                    const InputDecoration(labelText: 'Napomena (opciono)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Otkaži')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Sačuvaj')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+
+    final value = double.tryParse(amount.text.replaceAll(',', '.'));
+    if (value == null || value < 0) {
+      if (mounted) showSnack(context, 'Unesite ispravan iznos.', isError: true);
+      return;
+    }
+    final ymd = '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    try {
+      await ref.read(apiServiceProvider).putDailyTip(
+            TipDailyRequest(
+              employeeId: barberId,
+              date: ymd,
+              amount: value,
+              note: note.text.trim().isEmpty ? null : note.text.trim(),
+            ),
+          );
+      if (mounted) showSnack(context, 'Bakšiš dodat.');
+    } catch (e) {
+      if (mounted) {
+        showSnack(context, ApiException.from(e).message, isError: true);
+      }
+    }
+  }
+
   // Ikonica za svaki status (radi preglednosti u listi).
   IconData _statusIcon(AppointmentStatus s) => switch (s) {
         AppointmentStatus.scheduled => Icons.event_available,
@@ -856,6 +1069,9 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     // „Gledamo" i status zatvorenosti salona da se prikaz (npr. FAB) osvježi čim
     // se učita — pa se na zatvoren dan zakazivanje ne nudi.
     ref.watch(salonClosedForDayProvider);
+    // Isto i „slobodan dan" barbera — da FAB/izbor nestanu čim se učita.
+    ref.watch(selectedBarberOffProvider);
+    ref.watch(offEmployeesForDayProvider);
     // Osvježi trenutni zoom (koriste ga svi pomoćni graditelji preko `_z`).
     _z = ref.watch(scheduleZoomProvider);
 
@@ -1042,6 +1258,17 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
                       ],
                     ),
                   ),
+                  // Bakšiš za prikazanog barbera — samo u prikazu JEDNOG barbera
+                  // (zaposleni koji je ulogovan vidi baš ovaj prikaz; admin kad
+                  // gleda pojedinačnog barbera). U „Pregled" prikazu bakšiš je u
+                  // zaglavlju svake kolone.
+                  if (!showAll)
+                    IconButton(
+                      icon: const Icon(Icons.savings_outlined),
+                      tooltip: 'Dodaj bakšiš',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _addTipForCurrentBarber,
+                    ),
                   // Zoom kontrole (na uskom bez procenta — samo − i +).
                   _buildZoomCluster(compact),
                   // „Filteri": ikona na uskom, tekst + cijeli ekran na širokom.
@@ -1302,6 +1529,8 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
       AsyncValue<DaySchedule> scheduleAsync, int minutes) {
     // Salon ne radi tog dana → ne nudimo dugme za zakazivanje.
     if (_salonClosedToday) return null;
+    // Jedan barber koji je slobodan tog dana → ne nudimo zakazivanje.
+    if (!showAll && _selectedBarberOffToday) return null;
     // Jedan barber.
     if (!showAll && _lo != null && scheduleAsync.hasValue) {
       return Row(
@@ -1692,6 +1921,16 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
             ),
+          ),
+          // Malo dugme: unos dnevnog bakšiša za ovog barbera.
+          IconButton(
+            icon: const Icon(Icons.savings_outlined),
+            iconSize: 18,
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 26, height: 26),
+            tooltip: 'Dodaj bakšiš',
+            onPressed: () => _addDailyTipFor(barberId, name),
           ),
           // Malo dugme: zakaži „vanredni" termin za ovog barbera (sam biraš vrijeme).
           IconButton(

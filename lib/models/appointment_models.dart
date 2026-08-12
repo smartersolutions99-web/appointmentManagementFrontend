@@ -74,10 +74,29 @@ class AppointmentResponse with _$AppointmentResponse {
     double? servicePrice,
     String? contactType,
     int? storedById,
+    // Kada je termin ZAKAZAN (booking). Koristi se za „sumnjive" termine
+    // (zakazani znatno nakon vremena termina).
+    DateTime? createdAt,
+    // Kada je termin razriješen kao sumnjiv (null = nije razriješen).
+    DateTime? suspiciousReviewedAt,
   }) = _AppointmentResponse;
 
   factory AppointmentResponse.fromJson(Map<String, dynamic> json) =>
       _$AppointmentResponseFromJson(json);
+}
+
+/// Odgovor za „poslednja usluga klijenta" (GET /api/appointments/last-service).
+/// Koristi se da forma zakazivanja predloži uslugu i cijenu sa zadnjeg termina.
+@freezed
+class LastServiceResponse with _$LastServiceResponse {
+  const factory LastServiceResponse({
+    int? serviceId,
+    String? serviceName,
+    double? servicePrice,
+  }) = _LastServiceResponse;
+
+  factory LastServiceResponse.fromJson(Map<String, dynamic> json) =>
+      _$LastServiceResponseFromJson(json);
 }
 
 /// Zahtjev za promjenu statusa termina (PATCH /api/appointments/{id}/status).

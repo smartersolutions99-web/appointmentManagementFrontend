@@ -57,6 +57,10 @@ abstract class ApiService {
   Future<List<CustomerResponse>> findCustomersByPhone(
       @Query('phone') String phone);
 
+  /// Statistika po klijentu (potrošeno + brojevi po statusu). ADMIN i EMPLOYEE.
+  @GET('/api/customers/{id}/stats')
+  Future<CustomerStatsResponse> getCustomerStats(@Path('id') int id);
+
   // ----------------------- ZAPOSLENI -----------------------
 
   @GET('/api/employees')
@@ -228,6 +232,61 @@ abstract class ApiService {
     @Path('id') int id,
     @Body() StatusChangeRequest body,
   );
+
+  /// Poslednja (završena) usluga klijenta — za prefil forme zakazivanja.
+  /// `204` (nema završenih termina) → generisani kod vrati `null`.
+  @GET('/api/appointments/last-service')
+  Future<LastServiceResponse?> getLastService(
+      @Query('customerId') int customerId);
+
+  /// Sumnjivi (retroaktivno zakazani) termini: zakazani ≥ `minGapHours` sati
+  /// NAKON vremena termina. Razriješeni se ne vraćaju.
+  @GET('/api/appointments/suspicious')
+  Future<List<AppointmentResponse>> getSuspiciousAppointments({
+    @Query('minGapHours') int? minGapHours,
+  });
+
+  /// Označi sumnjiv termin kao pregledan (ADMIN) → nestaje s liste. Status se ne dira.
+  @PATCH('/api/appointments/{id}/resolve-suspicious')
+  Future<AppointmentResponse> resolveSuspicious(@Path('id') int id);
+
+  // ----------------------- BAKŠIŠ (tips) -----------------------
+
+  /// Dnevni ukupni bakšiš (upsert po zaposlenom + datumu).
+  @PUT('/api/tips/daily')
+  Future<TipResponse> putDailyTip(@Body() TipDailyRequest body);
+
+  /// Bakšiš za konkretan termin (zaposleni/datum se izvode iz termina).
+  @PUT('/api/tips/appointment/{appointmentId}')
+  Future<TipResponse> putAppointmentTip(
+    @Path('appointmentId') int appointmentId,
+    @Body() TipAppointmentRequest body,
+  );
+
+  /// Lista bakšiša (ADMIN sve; EMPLOYEE automatski samo svoje).
+  @GET('/api/tips')
+  Future<List<TipResponse>> getTips({
+    @Query('from') String? from, // "YYYY-MM-DD" (opcion)
+    @Query('to') String? to,
+    @Query('employeeId') int? employeeId,
+  });
+
+  /// Zbir bakšiša po zaposlenom za period.
+  @GET('/api/tips/summary')
+  Future<List<TipSummary>> getTipsSummary({
+    @Query('from') String? from,
+    @Query('to') String? to,
+  });
+
+  /// Jedan ukupan zbir bakšiša za period.
+  @GET('/api/tips/total')
+  Future<TipTotal> getTipsTotal({
+    @Query('from') String? from,
+    @Query('to') String? to,
+  });
+
+  @DELETE('/api/tips/{id}')
+  Future<void> deleteTip(@Path('id') int id);
 
   // ----------------------- ŠABLONSKE SMJENE (paginacija + CRUD) -----------------------
 

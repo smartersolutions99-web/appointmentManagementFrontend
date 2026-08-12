@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/exceptions.dart';
 import '../../models/models.dart';
+import '../../shared/format.dart';
 import '../../shared/widgets.dart';
 import 'customer_form.dart';
 import 'customers_provider.dart';
@@ -56,6 +57,26 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     } catch (e) {
       if (mounted) showSnack(context, ApiException.from(e).message, isError: true);
     }
+  }
+
+  /// Otvara detalj klijenta (statistika + alert za česte no-show) u „sheet"-u.
+  void _showDetail(CustomerResponse customer) {
+    if (customer.id == null) {
+      _openForm(existing: customer); // bez id-a nema statistike — otvori izmjenu
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _CustomerDetailSheet(
+        customer: customer,
+        onEdit: () {
+          Navigator.pop(context); // zatvori sheet
+          _openForm(existing: customer);
+        },
+      ),
+    );
   }
 
   /// Potvrda + brisanje klijenta.
@@ -132,6 +153,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           final customer = state.items[index];
           return _CustomerTile(
             customer: customer,
+            onTap: () => _showDetail(customer),
             onEdit: () => _openForm(existing: customer),
             onDelete: () => _delete(customer),
           );
@@ -144,11 +166,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
 /// Jedna kartica klijenta u listi.
 class _CustomerTile extends StatelessWidget {
   final CustomerResponse customer;
+  final VoidCallback onTap; // otvara detalj (statistika)
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _CustomerTile({
     required this.customer,
+    required this.onTap,
     required this.onEdit,
     required this.onDelete,
   });
@@ -167,7 +191,7 @@ class _CustomerTile extends StatelessWidget {
         ),
         title: Text(customer.name ?? 'Bez imena'),
         subtitle: Text(customer.contactValue ?? '—'),
-        onTap: onEdit,
+        onTap: onTap,
         // Meni sa tri tačkice (izmjena/brisanje).
         trailing: PopupMenuButton<String>(
           onSelected: (value) => value == 'edit' ? onEdit() : onDelete(),
@@ -176,6 +200,198 @@ class _CustomerTile extends StatelessWidget {
             PopupMenuItem(value: 'delete', child: Text('Obriši')),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Detalj klijenta (u „bottom sheet"-u): statistika sa servera + alert za
+/// česte no-show. Otvara se klikom na klijenta u listi.
+class _CustomerDetailSheet extends ConsumerWidget {
+  final CustomerResponse customer;
+  final VoidCallback onEdit;
+
+  const _CustomerDetailSheet({required this.customer, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final statsAsync = ref.watch(customerStatsProvider(customer.id!));
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Zaglavlje: avatar + ime + kontakt.
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    child: Text(
+                      (customer.name?.isNotEmpty ?? false)
+                          ? customer.name![0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(customer.name ?? 'Bez imena',
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold)),
+                        if ((customer.contactValue ?? '').isNotEmpty)
+                          Text(customer.contactValue!,
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: theme.hintColor)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              statsAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (e, _) => ErrorView(
+                  message: ApiException.from(e).message,
+                  onRetry: () =>
+                      ref.invalidate(customerStatsProvider(customer.id!)),
+                ),
+                data: (stats) => _statsBody(context, stats),
+              ),
+
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Zatvori'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: onEdit,
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Izmijeni'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statsBody(BuildContext context, CustomerStatsResponse s) {
+    final theme = Theme.of(context);
+    final frequentNoShow = s.noShow >= kFrequentNoShowThreshold;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Upozorenje za česte no-show.
+        if (frequentNoShow) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.errorContainer.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: theme.colorScheme.error),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Čest no-show — nije se pojavio ${s.noShow} puta. Razmisli o '
+                    'potvrdi termina ili avansu.',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // Glavne cifre: potrošeno + ukupno termina.
+        Card(
+          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.4),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _bigStat(theme, 'Potrošeno', Format.money(s.totalSpent)),
+                _bigStat(theme, 'Ukupno termina', '${s.totalAppointments}'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Razbijeno po statusu.
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _statChip(theme, 'Zakazani', s.scheduled, Colors.blue),
+            _statChip(theme, 'Završeni', s.completed, Colors.green),
+            _statChip(theme, 'Otkazani', s.cancelled, Colors.red),
+            _statChip(theme, 'Nije se pojavio', s.noShow, Colors.orange),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _bigStat(ThemeData theme, String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 4),
+        Text(value,
+            style: theme.textTheme.headlineSmall
+                ?.copyWith(fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _statChip(ThemeData theme, String label, int value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('$value',
+              style: TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(width: 6),
+          Text(label, style: theme.textTheme.bodySmall),
+        ],
       ),
     );
   }

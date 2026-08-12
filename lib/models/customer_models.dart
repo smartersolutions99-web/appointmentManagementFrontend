@@ -32,6 +32,25 @@ class CustomerResponse with _$CustomerResponse {
       _$CustomerResponseFromJson(json);
 }
 
+/// Statistika po klijentu (GET /api/customers/{id}/stats).
+/// `totalSpent` = zbir cijena ZAVRŠENIH termina; ostalo su brojevi po statusu.
+@freezed
+class CustomerStatsResponse with _$CustomerStatsResponse {
+  const factory CustomerStatsResponse({
+    int? customerId,
+    String? customerName,
+    @Default(0) int totalAppointments,
+    @Default(0) int scheduled,
+    @Default(0) int completed,
+    @Default(0) int cancelled,
+    @Default(0) int noShow,
+    @Default(0) double totalSpent,
+  }) = _CustomerStatsResponse;
+
+  factory CustomerStatsResponse.fromJson(Map<String, dynamic> json) =>
+      _$CustomerStatsResponseFromJson(json);
+}
+
 /// Rezultat pretrage klijenta po imenu (GET /api/customers/search).
 @freezed
 class CustomerSearchHit with _$CustomerSearchHit {

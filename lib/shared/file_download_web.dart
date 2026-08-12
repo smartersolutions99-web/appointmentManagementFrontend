@@ -17,3 +17,17 @@ Future<String?> downloadTextFile(String filename, String content,
   html.Url.revokeObjectUrl(url);
   return null;
 }
+
+/// Web: preuzmi binarni fajl (npr. .xlsx) iz gotovih bajtova. Vraća `null`
+/// jer browser sam bira gdje čuva fajl.
+Future<String?> downloadBytesFile(String filename, List<int> bytes,
+    {String mime =
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}) async {
+  final blob = html.Blob(<dynamic>[bytes], mime);
+  final url = html.Url.createObjectUrlFromBlob(blob);
+  html.AnchorElement(href: url)
+    ..setAttribute('download', filename)
+    ..click();
+  html.Url.revokeObjectUrl(url);
+  return null;
+}

@@ -12,3 +12,4 @@ export 'sale_models.dart';
 export 'appointment_models.dart';
 export 'report_models.dart';
 export 'shift_models.dart';
+export 'tip_models.dart';

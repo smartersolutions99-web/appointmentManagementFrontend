@@ -32,7 +32,12 @@ const _allItems = <_NavItem>[
   _NavItem(Routes.shiftTemplates, Icons.calendar_view_week, 'Šabloni smjena'),
   _NavItem(Routes.shiftAssignments, Icons.assignment_ind_outlined,
       'Dodjela smjena'),
+  _NavItem(Routes.suspicious, Icons.report_gmailerrorred_outlined,
+      'Sumnjivi termini',
+      adminOnly: true),
   _NavItem(Routes.reports, Icons.bar_chart_outlined, 'Izvještaji', adminOnly: true),
+  // „Bakšiš" vidi svako (zaposleni vidi/unosi samo svoje — backend to čuva).
+  _NavItem(Routes.tips, Icons.savings_outlined, 'Bakšiš'),
 ];
 
 /// Da li je bočni meni proširen (ikonice + tekst) ili skupljen (samo ikonice).

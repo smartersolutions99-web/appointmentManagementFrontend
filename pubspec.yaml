@@ -37,6 +37,7 @@ dependencies:
   intl: ^0.19.0 # Formatiranje datuma i brojeva
   cupertino_icons: ^1.0.8
   fl_chart: ^0.69.0 # Grafikoni (pita, stubičasti) za izvještaje
+  excel: ^4.0.0 # Generisanje .xlsx izvještaja (više sheetova)
   path_provider: ^2.1.0 # Pristup folderima (Downloads) za desktop export
   package_info_plus: ^8.1.0 # Čita trenutnu verziju aplikacije (provjera nadogradnje)
   open_filex: ^4.5.0 # Otvara preuzeti APK da Android pokrene instalaciju

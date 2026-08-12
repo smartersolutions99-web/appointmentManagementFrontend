@@ -87,6 +87,9 @@ class BarberReport {
   /// Koliko od prihoda ostaje salonu/vlasniku (nakon provizije zaposlenog).
   /// Kad procenat nije podešen, tretiramo ga kao 0% (cio prihod ostaje salonu).
   double get salonKeep => revenue * (1 - (commission ?? 0) / 100);
+
+  /// Koliko od prihoda ide zaposlenom (njegova provizija).
+  double get employeeCut => revenue * (commission ?? 0) / 100;
 }
 
 /// Statistika jedne usluge: koliko puta je rađena i koliki prihod je donijela.
@@ -94,12 +97,16 @@ class ServiceReport {
   final int? serviceId;
   final String name;
   final int count; // broj termina sa ovom uslugom (osim otkazanih/nedolaska)
+  final int completedCount; // broj ZAVRŠENIH (odrađenih) termina sa ovom uslugom
+  final double? unitPrice; // cijena usluge (osnovna, iz šifarnika usluga)
   final double revenue; // prihod od završenih
 
   const ServiceReport({
     required this.serviceId,
     required this.name,
     required this.count,
+    this.completedCount = 0,
+    this.unitPrice,
     required this.revenue,
   });
 }
@@ -196,6 +203,7 @@ final detailedReportProvider =
     services = const [];
   }
   final serviceNameById = {for (final s in services) s.id: s.name};
+  final serviceUnitPriceById = {for (final s in services) s.id: s.basicPrice};
 
   // Saberi ukupno, po barberu i po usluzi.
   final overall = _Acc();
@@ -211,6 +219,27 @@ final detailedReportProvider =
     if (status != AppointmentStatus.cancelled &&
         status != AppointmentStatus.noShow) {
       byService.putIfAbsent(a.serviceId, () => _Acc()).add(status, price);
+    }
+  }
+
+  // Ako lista zaposlenih ne vraća procenat (commission je null), dovuci ga sa
+  // detaljnog endpointa `/api/employees/{id}` — samo za barbere koji se pojave
+  // u izvještaju i kojima procenat fali. Ako ni detalj nema procenat, ostaje
+  // null (prikaz „—") — tada backend zaista ne čuva procenat.
+  final needCommission = byBarber.keys
+      .whereType<int>()
+      .where((id) => commissionById[id] == null)
+      .toList();
+  if (needCommission.isNotEmpty) {
+    final fetched = await Future.wait(needCommission.map((id) async {
+      try {
+        return MapEntry<int, double?>(id, (await api.getEmployee(id)).commission);
+      } catch (_) {
+        return MapEntry<int, double?>(id, null);
+      }
+    }));
+    for (final e in fetched) {
+      if (e.value != null) commissionById[e.key] = e.value;
     }
   }
 
@@ -231,6 +260,8 @@ final detailedReportProvider =
         serviceId: entry.key,
         name: serviceNameById[entry.key] ?? 'Bez usluge',
         count: entry.value.counts.total,
+        completedCount: entry.value.counts.completed,
+        unitPrice: serviceUnitPriceById[entry.key],
         revenue: entry.value.revenue,
       ),
   ]..sort((a, b) => b.count.compareTo(a.count));

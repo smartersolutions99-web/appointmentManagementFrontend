@@ -220,11 +220,11 @@ final dayScheduleProvider = FutureProvider.autoDispose<DaySchedule>((ref) async 
     sort: 'startTime,asc',
   );
 
-  // Zadržavamo samo aktivne termine. Otkazani i „nije se pojavio“ oslobađaju
-  // slot, pa se može ponovo zakazati za drugog klijenta.
+  // Otkazani termini se sklanjaju (slot se oslobađa, može se ponovo zakazati).
+  // „Nije se pojavio“ OSTAJE na spisku — samo dobije narandžastu boju i bedž
+  // (termin ne nestaje, kako je traženo).
   final appointments = page.content
       .where((a) => a.status != AppointmentStatus.cancelled)
-      .where((a) => a.status != AppointmentStatus.noShow)
       .toList();
 
   // Zbir dana (za footer): brojimo termine (bez pauza) i sabiramo cijene
@@ -407,6 +407,38 @@ final salonClosedForDayProvider = FutureProvider.autoDispose<bool>((ref) async {
   }
 });
 
+/// employeeId-jevi barbera koji su za IZABRANI dan označeni kao „slobodan dan"
+/// (`off == true` u smjeni po danu). Čita se iz `/api/shift-days` (koje sada
+/// smiju čitati i zaposleni). `/api/schedule` za takav dan vraća praznu smjenu,
+/// ali NE razlikuje „slobodan dan" od „nema dodijeljene smjene" — zato ovdje
+/// gledamo baš `off` flag, da bismo zakazivanje blokirali SAMO za slobodne dane
+/// (a ne i za barbere bez smjene). Greške tiho gutamo (prazan skup → ne blokiramo).
+final offEmployeesForDayProvider =
+    FutureProvider.autoDispose<Set<int>>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  final day = _ymd(ref.watch(scheduleDateProvider));
+  try {
+    final list = await api.getShiftDays(from: day, to: day);
+    return {
+      for (final s in list)
+        if (s.off && s.employeeId != null) s.employeeId!,
+    };
+  } catch (_) {
+    return const <int>{};
+  }
+});
+
+/// Da li je BARBER čiji se pojedinačni raspored gleda „slobodan" izabranog dana.
+/// (Za zbirni „Pregled" prikaz koristi se [offEmployeesForDayProvider] po barberu.)
+final selectedBarberOffProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final auth = ref.watch(authControllerProvider);
+  final selected = ref.watch(scheduleEmployeeProvider);
+  final empId = auth.isAdmin ? (selected ?? auth.employeeId) : auth.employeeId;
+  if (empId == null) return false;
+  final offIds = await ref.watch(offEmployeesForDayProvider.future);
+  return offIds.contains(empId);
+});
+
 // ===================== AGENDA: SVI BARBERI (admin) =====================
 
 /// Jedna stavka u agendi: termin + ime barbera + ime/telefon klijenta.
@@ -530,10 +562,10 @@ final allDayScheduleProvider =
     sort: 'startTime,asc',
   );
 
-  // Otkazani i „nije se pojavio“ oslobađaju slot (ne prikazujemo ih).
+  // Otkazani se sklanjaju (slot se oslobađa); „nije se pojavio“ OSTAJE na
+  // spisku (narandžast) — termin ne nestaje.
   final appointments = page.content
       .where((a) => a.status != AppointmentStatus.cancelled)
-      .where((a) => a.status != AppointmentStatus.noShow)
       .where((a) => a.startTime != null)
       .toList();
 
@@ -574,6 +606,14 @@ final allDayScheduleProvider =
     boardShifts = await ref.watch(boardShiftsProvider.future);
   } catch (_) {
     boardShifts = const {};
+  }
+  // Barberi označeni kao „slobodan dan" ovog datuma — njihove kolone ostaju
+  // prazne (bez slobodnih polja za zakazivanje), kao da salon za njih ne radi.
+  Set<int> offIds = const {};
+  try {
+    offIds = await ref.watch(offEmployeesForDayProvider.future);
+  } catch (_) {
+    offIds = const {};
   }
   final anySched =
       boardShifts.values.isNotEmpty ? boardShifts.values.first : null;
@@ -717,8 +757,9 @@ final allDayScheduleProvider =
     int? winEnd;
     // Ako je salon POZNATO zatvoren tog dana → kolona bez okvira (ostaje prazna,
     // osim postojećih termina koji je prošire ispod). Time neradni dan po datumu
-    // izgleda isto kao neradni dan po sedmici.
-    if (!salonClosedKnown) {
+    // izgleda isto kao neradni dan po sedmici. Isto važi i za „slobodan dan"
+    // ovog barbera (off) — tada mu ne nudimo slobodna polja za zakazivanje.
+    if (!salonClosedKnown && !offIds.contains(id)) {
       final shStart = _minutesOfDay(sched?.shiftStart);
       final shEnd = _minutesOfDay(sched?.shiftEnd);
       if (shStart != null && shEnd != null && shEnd > shStart) {
