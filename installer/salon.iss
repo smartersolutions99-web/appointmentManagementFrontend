@@ -19,7 +19,7 @@
 ; ============================================================================
 
 #define MyAppName "Salon Menadžment"
-#define MyAppVersion "1.0.0"                    ; <-- promijeni pri svakom izdanju
+#define MyAppVersion "1.2.0"                    ; <-- promijeni pri svakom izdanju
 #define MyAppExeName "salon_management.exe"
 #define BuildDir "..\build\windows\x64\runner\Release"
 
