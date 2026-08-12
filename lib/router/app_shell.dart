@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../features/appointments/reminders.dart';
 import '../features/update/update_gate.dart';
 import '../services/providers.dart';
+import '../services/update_service.dart';
 import 'app_router.dart';
 
 /// Jedna stavka u meniju.
@@ -44,6 +45,15 @@ const _allItems = <_NavItem>[
 /// Čuvamo ga u provideru da izbor ostane zapamćen dok se krećemo kroz ekrane.
 final railExtendedProvider = StateProvider<bool>((ref) => true);
 
+/// Provjera nadogradnje. Riverpod pokreće ovo JEDNOM i kešira rezultat, pa je
+/// otporno na ponovno građenje widgeta (za razliku od okidača u `initState`).
+final updateCheckProvider = FutureProvider<UpdateInfo?>((ref) async {
+  return checkForUpdate();
+});
+
+/// Da se dijalog nadogradnje prikaže samo jednom po pokretanju aplikacije.
+bool _updateDialogShown = false;
+
 /// Zajednički „okvir“ oko svih glavnih ekrana: bočni meni + naslovna traka.
 ///
 /// Na širokim ekranima prikazuje bočnu traku (NavigationRail), a na uskim
@@ -68,6 +78,17 @@ class AppShell extends ConsumerWidget {
     if (selectedIndex < 0) selectedIndex = 0;
 
     final currentTitle = items[selectedIndex].label;
+
+    // Nadogradnja: kad provjera stigne i ima novije verzije, prikaži dijalog
+    // (samo jednom po pokretanju). Pošto ovo prati provider, radi bez obzira
+    // na to koliko se puta AppShell pregradi nakon prijave.
+    final updateInfo = ref.watch(updateCheckProvider).value;
+    if (updateInfo != null && !_updateDialogShown) {
+      _updateDialogShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showUpdateDialog(context, updateInfo);
+      });
+    }
 
     // Široki ekran (tablet/desktop) → bočna traka. Uski (telefon) → drawer.
     final isWide = MediaQuery.sizeOf(context).width >= 800;
@@ -135,7 +156,7 @@ class AppShell extends ConsumerWidget {
                   title: Text(currentTitle),
                   actions: [logoutButton],
                 ),
-                body: UpdateGate(child: RemindersController(child: child)),
+                body: RemindersController(child: child),
               ),
             ),
           ],
@@ -165,7 +186,7 @@ class AppShell extends ConsumerWidget {
             ),
         ],
       ),
-      body: UpdateGate(child: RemindersController(child: child)),
+      body: RemindersController(child: child),
     );
   }
 }
