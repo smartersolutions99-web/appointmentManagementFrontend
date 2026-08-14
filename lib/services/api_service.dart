@@ -26,6 +26,21 @@ abstract class ApiService {
   @POST('/api/auth/logout')
   Future<void> logout(@Body() LogoutRequest body);
 
+  // ----------------------- SUPPORT (SUPER_SUPER_ADMIN) -----------------------
+  // Sve rute koriste ROOT token (interceptor to rješava po putanji /api/support/).
+
+  /// Lista firmi + njihovih salona (za „salon picker").
+  @GET('/api/support/businesses')
+  Future<List<SupportBusiness>> getSupportBusinesses();
+
+  /// Uđi u salon (impersonacija) — vraća impersonation token + info o salonu.
+  @POST('/api/support/impersonate')
+  Future<ImpersonationResponse> impersonate(@Body() ImpersonateRequest body);
+
+  /// Izađi iz impersonacije.
+  @POST('/api/support/impersonate/stop')
+  Future<void> stopImpersonation();
+
   // ----------------------- KLIJENTI (paginacija) -----------------------
 
   @GET('/api/customers')

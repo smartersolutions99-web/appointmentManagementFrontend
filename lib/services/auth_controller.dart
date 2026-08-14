@@ -6,6 +6,7 @@ import '../core/exceptions.dart';
 import '../models/models.dart';
 import 'api_service.dart';
 import 'providers.dart';
+import 'support_session.dart';
 import 'token_storage.dart';
 
 /// Mogući statusi sesije korisnika.
@@ -32,7 +33,21 @@ class AuthController extends ChangeNotifier {
   }
 
   /// Da li je korisnik administrator (utiče na prikaz menija).
+  /// (SUPER_SUPER_ADMIN sadrži „ADMIN" — dok impersonira ponaša se kao admin
+  /// salona; dok ne impersonira router ga svakako drži na salon-pickeru.)
   bool get isAdmin => (role ?? '').toUpperCase().contains('ADMIN');
+
+  /// Najviša (developerska) rola — „support mode" (impersonacija salona).
+  bool get isSuperSuperAdmin =>
+      (role ?? '').toUpperCase() == 'SUPER_SUPER_ADMIN';
+
+  // Stanje impersonacije (dijeli se sa interceptorom).
+  SupportSession get _support => _ref.read(supportSessionProvider);
+
+  /// Da li smo trenutno „unutar" nekog salona (impersonacija aktivna).
+  bool get impersonating => _support.active;
+  String? get supportBusinessName => _support.businessName;
+  String? get supportSellingPlaceName => _support.sellingPlaceName;
 
   // ApiService dohvatamo tek kada nam treba (izbjegavamo zavisnost u krug).
   ApiService get _api => _ref.read(apiServiceProvider);
@@ -115,6 +130,39 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  /// SSA: uđi u salon (impersonacija). Vraća poruku greške ili `null` (uspjeh).
+  Future<String?> enterSalon(int sellingPlaceId) async {
+    try {
+      final resp = await _api
+          .impersonate(ImpersonateRequest(sellingPlaceId: sellingPlaceId));
+      if (resp.accessToken == null) {
+        return 'Server nije vratio token za salon.';
+      }
+      _support.setFrom(resp);
+      notifyListeners(); // router → standardni admin UI (u support modu)
+      return null;
+    } catch (e) {
+      return ApiException.from(e).message;
+    }
+  }
+
+  /// SSA: izađi iz impersonacije (vrati se na salon-picker).
+  Future<void> exitImpersonation() async {
+    try {
+      await _api.stopImpersonation();
+    } catch (_) {
+      // Čak i ako poziv ne uspije, lokalno izlazimo.
+    }
+    _support.clear();
+    notifyListeners();
+  }
+
+  /// Poziva interceptor kada impersonacija propadne (vrati na salon-picker).
+  void handleImpersonationLost() {
+    _support.clear();
+    notifyListeners();
+  }
+
   /// Odjava — obavještava server (best-effort) i briše lokalne tokene.
   Future<void> logout() async {
     try {
@@ -126,6 +174,7 @@ class AuthController extends ChangeNotifier {
       // Čak i ako poziv ka serveru ne uspije, lokalno se ipak odjavljujemo.
     }
     await _storage.clear();
+    _support.clear(); // izađi iz support moda (ako je bio aktivan)
     role = null;
     employeeId = null;
     status = AuthStatus.unauthenticated;

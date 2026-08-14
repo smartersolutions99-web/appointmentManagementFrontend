@@ -20,6 +20,8 @@ class CustomersScreen extends ConsumerStatefulWidget {
 class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   // Kontroler skrola — pratimo kada korisnik dođe blizu dna liste.
   final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
+  String _query = ''; // tekuća pretraga (po imenu ili telefonu)
 
   @override
   void initState() {
@@ -30,6 +32,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -53,6 +56,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       } else {
         await controller.update(existing.id!, request);
       }
+      ref.invalidate(allCustomersProvider); // osvježi i pretragu
       if (mounted) showSnack(context, 'Sačuvano.');
     } catch (e) {
       if (mounted) showSnack(context, ApiException.from(e).message, isError: true);
@@ -91,6 +95,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
 
     try {
       await ref.read(customersControllerProvider.notifier).delete(customer.id!);
+      ref.invalidate(allCustomersProvider); // osvježi i pretragu
       if (mounted) showSnack(context, 'Klijent obrisan.');
     } catch (e) {
       if (mounted) showSnack(context, ApiException.from(e).message, isError: true);
@@ -107,7 +112,76 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Novi klijent'),
       ),
-      body: _buildBody(state),
+      body: Column(
+        children: [
+          // Pretraga (po imenu ili telefonu). Prazno polje → obična lista.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Pretraga po imenu ili telefonu…',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                isDense: true,
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+              ),
+              onChanged: (v) => setState(() => _query = v.trim()),
+            ),
+          ),
+          Expanded(
+            child: _query.isEmpty ? _buildBody(state) : _buildSearchResults(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Rezultati pretrage — filtriramo LOKALNO kroz sve klijente (po imenu/telefonu).
+  Widget _buildSearchResults() {
+    final async = ref.watch(allCustomersProvider);
+    return async.when(
+      loading: () => const LoadingView(),
+      error: (e, _) => ErrorView(
+        message: ApiException.from(e).message,
+        onRetry: () => ref.invalidate(allCustomersProvider),
+      ),
+      data: (all) {
+        final q = _query.toLowerCase();
+        final results = all
+            .where((c) =>
+                (c.name ?? '').toLowerCase().contains(q) ||
+                (c.contactValue ?? '').toLowerCase().contains(q))
+            .toList();
+        if (results.isEmpty) {
+          return const EmptyView(
+            message: 'Nema rezultata za pretragu.',
+            icon: Icons.search_off,
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 88),
+          itemCount: results.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final customer = results[index];
+            return _CustomerTile(
+              customer: customer,
+              onTap: () => _showDetail(customer),
+              onEdit: () => _openForm(existing: customer),
+              onDelete: () => _delete(customer),
+            );
+          },
+        );
+      },
     );
   }
 

@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/models.dart';
 import '../../services/providers.dart';
-import '../appointments/day_schedule_provider.dart' show isBreakNote;
+import '../appointments/day_schedule_provider.dart'
+    show isBreakNote, customerDirectoryProvider;
 import '../employees/employees_provider.dart';
 import '../services/services_provider.dart';
 
@@ -111,18 +112,41 @@ class ServiceReport {
   });
 }
 
-/// Cjelokupan detaljan izvještaj za period: ukupno + po barberu + po usluzi.
+/// Statistika jednog klijenta u periodu (za sekciju „Po klijentu").
+class CustomerReport {
+  final int? customerId;
+  final String name;
+  final StatusCounts counts;
+  final double spent; // potrošeno = zbir cijena ZAVRŠENIH termina
+
+  const CustomerReport({
+    required this.customerId,
+    required this.name,
+    required this.counts,
+    required this.spent,
+  });
+
+  /// „Dolasci" = završeni termini.
+  int get visits => counts.completed;
+
+  /// „Otkazivanja/ne-dolasci" = otkazani + nije se pojavio.
+  int get missed => counts.cancelled + counts.noShow;
+}
+
+/// Cjelokupan detaljan izvještaj za period: ukupno + po barberu + po usluzi + po klijentu.
 class DetailedReport {
   final StatusCounts overall;
   final double totalRevenue;
   final List<BarberReport> barbers;
   final List<ServiceReport> services;
+  final List<CustomerReport> customers;
 
   const DetailedReport({
     required this.overall,
     required this.totalRevenue,
     required this.barbers,
     required this.services,
+    this.customers = const [],
   });
 
   /// Pomoćni KPI pokazatelji (u procentima / prosjek).
@@ -205,10 +229,12 @@ final detailedReportProvider =
   final serviceNameById = {for (final s in services) s.id: s.name};
   final serviceUnitPriceById = {for (final s in services) s.id: s.basicPrice};
 
-  // Saberi ukupno, po barberu i po usluzi.
+  // Saberi ukupno, po barberu, po usluzi i po klijentu.
   final overall = _Acc();
   final byBarber = <int?, _Acc>{};
   final byService = <int?, _Acc>{};
+  final byCustomer = <int, _Acc>{}; // samo termini vezani za klijenta (id)
+  final custNameFromAppt = <int, String>{}; // ime sa termina (ako ga ima)
   for (final a in all) {
     if (isBreakNote(a.note)) continue; // pauze ne ulaze u statistiku
     final status = a.status ?? AppointmentStatus.scheduled;
@@ -219,6 +245,12 @@ final detailedReportProvider =
     if (status != AppointmentStatus.cancelled &&
         status != AppointmentStatus.noShow) {
       byService.putIfAbsent(a.serviceId, () => _Acc()).add(status, price);
+    }
+    final cid = a.customerId;
+    if (cid != null) {
+      byCustomer.putIfAbsent(cid, () => _Acc()).add(status, price);
+      final n = a.customerName?.trim();
+      if (n != null && n.isNotEmpty) custNameFromAppt[cid] = n;
     }
   }
 
@@ -266,11 +298,34 @@ final detailedReportProvider =
       ),
   ]..sort((a, b) => b.count.compareTo(a.count));
 
+  // Imena klijenata: prvo sa termina, pa iz adresara (ako fali).
+  Map<int?, String?> dirNameById = const {};
+  if (byCustomer.isNotEmpty) {
+    try {
+      final customers = await ref.watch(customerDirectoryProvider.future);
+      dirNameById = {for (final c in customers) c.id: c.name};
+    } catch (_) {
+      dirNameById = const {};
+    }
+  }
+  final customerReports = [
+    for (final entry in byCustomer.entries)
+      CustomerReport(
+        customerId: entry.key,
+        name: custNameFromAppt[entry.key] ??
+            dirNameById[entry.key] ??
+            'Klijent ${entry.key}',
+        counts: entry.value.counts,
+        spent: entry.value.revenue,
+      ),
+  ];
+
   return DetailedReport(
     overall: overall.counts,
     totalRevenue: overall.revenue,
     barbers: barbers,
     services: serviceReports,
+    customers: customerReports,
   );
 });
 

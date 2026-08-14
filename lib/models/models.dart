@@ -13,3 +13,4 @@ export 'appointment_models.dart';
 export 'report_models.dart';
 export 'shift_models.dart';
 export 'tip_models.dart';
+export 'support_models.dart';

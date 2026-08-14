@@ -135,5 +135,23 @@ final customerStatsProvider = FutureProvider.autoDispose
   return ref.watch(apiServiceProvider).getCustomerStats(id);
 });
 
-/// Prag za upozorenje „čest no-show" na detalju klijenta.
+/// Svi klijenti — za LOKALNU pretragu na tabu Klijenti (paginirani endpoint
+/// nema filter po imenu). Učitava kroz stranice, uz sigurnosnu granicu.
+final allCustomersProvider =
+    FutureProvider.autoDispose<List<CustomerResponse>>((ref) async {
+  final api = ref.watch(apiServiceProvider);
+  final all = <CustomerResponse>[];
+  var page = 0;
+  while (true) {
+    final res = await api.getCustomers(page: page, size: 200, sort: 'name,asc');
+    all.addAll(res.content);
+    if (res.last || page >= 20) break;
+    page++;
+  }
+  return all;
+});
+
+/// Pragovi za upozorenje „čest no-show / otkazivanja" (detalj klijenta + pri
+/// zakazivanju termina).
 const int kFrequentNoShowThreshold = 3;
+const int kFrequentCancelThreshold = 3;

@@ -3,54 +3,81 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 
 import '../core/config.dart';
+import 'support_session.dart';
 import 'token_storage.dart';
 
 /// Interceptor koji se „umiješa“ u svaki mrežni zahtjev.
 ///
-/// Radi dvije ključne stvari:
 /// 1. Na svaki zahtjev dodaje `Authorization: Bearer <token>`.
-/// 2. Ako server vrati 401 (token istekao), automatski pokušava da osvježi
-///    token preko /api/auth/refresh, pa ponavlja originalni zahtjev.
+///    - `/api/auth/*` → bez tokena;
+///    - `/api/support/*` → uvijek ROOT token (SUPER_SUPER_ADMIN);
+///    - ostalo (salon-pozivi) → IMPERSONATION token ako smo u „support modu",
+///      inače običan (root/korisnički) token.
+/// 2. Na 401 pokušava oporavak:
+///    - obični korisnik / support pozivi → `/api/auth/refresh` pa ponovi zahtjev;
+///    - salon-poziv u support modu → osvježi root (po potrebi) + ponovo uđi u
+///      salon (`/api/support/impersonate`) pa ponovi zahtjev; ako ne uspije,
+///      vrati korisnika na salon-picker.
+///
+/// NAPOMENA: za OBIČNE korisnike (impersonation token == null) ponašanje je
+/// identično kao ranije — bira se root token i standardni refresh.
 class AuthInterceptor extends Interceptor {
   final TokenStorage _tokenStorage;
+  final SupportSession _support;
 
-  /// Poseban Dio bez interceptora — koristimo ga SAMO za /refresh poziv,
-  /// da ne upadnemo u beskonačnu petlju osvježavanja.
+  /// Poseban Dio bez interceptora — koristimo ga za /refresh i /impersonate,
+  /// da ne upadnemo u beskonačnu petlju.
   final Dio _refreshDio;
 
-  /// Funkcija koja se poziva kada sesija konačno istekne (npr. da nas vrati
-  /// na ekran za prijavu). Postavlja se izvana.
+  /// Poziva se kad sesija konačno istekne (vrati na login).
   final void Function()? onSessionExpired;
 
-  /// „Brava“ koja sprječava da više zahtjeva istovremeno pokrene refresh.
-  /// Ako je refresh u toku, ostali zahtjevi sačekaju isti rezultat.
+  /// Poziva se kad impersonacija propadne (vrati na salon-picker).
+  final void Function()? onImpersonationLost;
+
+  /// „Brave“ koje sprječavaju paralelni refresh / re-impersonaciju.
   Completer<String?>? _refreshCompleter;
+  Completer<String?>? _reimpersonateCompleter;
 
   AuthInterceptor(
-    this._tokenStorage, {
+    this._tokenStorage,
+    this._support, {
     this.onSessionExpired,
+    this.onImpersonationLost,
   }) : _refreshDio = Dio(BaseOptions(
           baseUrl: AppConfig.baseUrl,
-          // Isto kao kod glavnog klijenta: obavezno JSON, da refresh poziv
-          // ne bude poslat kao 'application/octet-stream'.
           contentType: Headers.jsonContentType,
           headers: const {'Accept': 'application/json'},
         ));
+
+  bool _isAuthPath(String path) => path.contains('/api/auth/');
+  bool _isSupportPath(String path) => path.contains('/api/support/');
 
   @override
   Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
+    final path = options.path;
+
     // Na auth rute (login/refresh) ne kačimo token.
-    final isAuthPath = options.path.contains('/api/auth/');
-    if (!isAuthPath) {
-      final token = await _tokenStorage.accessToken;
-      if (token != null) {
-        options.headers['Authorization'] = 'Bearer $token';
-      }
+    if (_isAuthPath(path)) {
+      handler.next(options);
+      return;
     }
-    handler.next(options); // Pusti zahtjev dalje.
+
+    String? token;
+    if (_isSupportPath(path)) {
+      // /api/support/* uvijek koristi ROOT token.
+      token = await _tokenStorage.accessToken;
+    } else {
+      // Salon-poziv: u support modu impersonation token; inače običan token.
+      token = _support.token ?? await _tokenStorage.accessToken;
+    }
+    if (token != null) {
+      options.headers['Authorization'] = 'Bearer $token';
+    }
+    handler.next(options);
   }
 
   @override
@@ -58,60 +85,112 @@ class AuthInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    final response = err.response;
-    final isUnauthorized = response?.statusCode == 401;
-    final isAuthPath = err.requestOptions.path.contains('/api/auth/');
+    final path = err.requestOptions.path;
+    final isUnauthorized = err.response?.statusCode == 401;
 
-    // Pokušavamo refresh samo ako je 401 i ako to NIJE bio auth poziv.
-    if (!isUnauthorized || isAuthPath) {
+    // Refresh/oporavak pokušavamo samo na 401 i NE na auth pozivima.
+    if (!isUnauthorized || _isAuthPath(path)) {
       return handler.next(err);
     }
 
-    try {
-      // Dobij novi token (ili sačekaj refresh koji je već u toku).
-      final newToken = await _refreshAccessToken();
+    // Salon-poziv koji je pao na 401 DOK smo u support modu → re-impersonacija.
+    if (_support.active && !_isSupportPath(path)) {
+      try {
+        final newImp = await _reimpersonate();
+        if (newImp == null) {
+          _support.clear();
+          onImpersonationLost?.call();
+          return handler.next(err);
+        }
+        final retry = await _retryRequest(err.requestOptions, newImp);
+        return handler.resolve(retry);
+      } catch (_) {
+        _support.clear();
+        onImpersonationLost?.call();
+        return handler.next(err);
+      }
+    }
 
+    // Standardni refresh: obični korisnik ILI /api/support/* sa isteklim root tokenom.
+    try {
+      final newToken = await _refreshAccessToken();
       if (newToken == null) {
-        // Refresh nije uspio — sesija je gotova.
         await _tokenStorage.clear();
         onSessionExpired?.call();
         return handler.next(err);
       }
-
-      // Ponovi originalni zahtjev sa novim tokenom.
       final retryResponse = await _retryRequest(err.requestOptions, newToken);
       return handler.resolve(retryResponse);
     } catch (_) {
-      // Bilo kakva greška u procesu — odjavi korisnika.
       await _tokenStorage.clear();
       onSessionExpired?.call();
       return handler.next(err);
     }
   }
 
-  /// Vraća novi access token. Ako je refresh već pokrenut iz drugog zahtjeva,
-  /// samo sačeka njegov rezultat (zahvaljujući `_refreshCompleter`).
+  // ===================== RE-IMPERSONACIJA (support mode) =====================
+
+  /// Ponovo uđi u isti salon (uz zaključavanje da se ne radi paralelno).
+  Future<String?> _reimpersonate() {
+    final existing = _reimpersonateCompleter;
+    if (existing != null) return existing.future;
+
+    final completer = Completer<String?>();
+    _reimpersonateCompleter = completer;
+    _doReimpersonate().then(completer.complete).catchError((Object _) {
+      completer.complete(null);
+    }).whenComplete(() => _reimpersonateCompleter = null);
+    return completer.future;
+  }
+
+  Future<String?> _doReimpersonate() async {
+    final placeId = _support.sellingPlaceId;
+    if (placeId == null) return null;
+
+    // Prvo probaj sa trenutnim root tokenom; na 401 osvježi root pa ponovo.
+    final rootAccess = await _tokenStorage.accessToken;
+    try {
+      return await _callImpersonate(placeId, rootAccess);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        final newRoot = await _refreshAccessToken();
+        if (newRoot == null) return null;
+        return await _callImpersonate(placeId, newRoot);
+      }
+      return null;
+    }
+  }
+
+  Future<String?> _callImpersonate(
+      int sellingPlaceId, String? rootAccess) async {
+    final resp = await _refreshDio.post<Map<String, dynamic>>(
+      '/api/support/impersonate',
+      data: {'sellingPlaceId': sellingPlaceId},
+      options: Options(headers: {
+        if (rootAccess != null) 'Authorization': 'Bearer $rootAccess',
+      }),
+    );
+    final data = resp.data;
+    if (data == null) return null;
+    _support.updateFromMap(data);
+    return _support.token;
+  }
+
+  // ===================== STANDARDNI REFRESH (root/korisnik) =====================
+
+  /// Vraća novi access token (ili sačeka refresh koji je već u toku).
   Future<String?> _refreshAccessToken() {
-    // Ako refresh već traje, vrati isti „future“ svima.
     final existing = _refreshCompleter;
     if (existing != null) return existing.future;
 
     final completer = Completer<String?>();
     _refreshCompleter = completer;
-
-    // Pokreni stvarni refresh i kad završi, oslobodi bravu.
-    _doRefresh().then((token) {
-      completer.complete(token);
-    }).catchError((Object e) {
+    _doRefresh().then(completer.complete).catchError((Object _) {
       completer.complete(null);
-    }).whenComplete(() {
-      _refreshCompleter = null;
-    });
-
+    }).whenComplete(() => _refreshCompleter = null);
     return completer.future;
   }
 
-  /// Stvarni poziv ka /api/auth/refresh.
   Future<String?> _doRefresh() async {
     final refreshToken = await _tokenStorage.refreshToken;
     if (refreshToken == null) return null;
@@ -134,7 +213,6 @@ class AuthInterceptor extends Interceptor {
 
     if (newAccess == null || newRefresh == null) return null;
 
-    // Sačuvaj nove tokene za buduće zahtjeve.
     await _tokenStorage.saveTokens(
       accessToken: newAccess,
       refreshToken: newRefresh,
@@ -144,7 +222,7 @@ class AuthInterceptor extends Interceptor {
     return newAccess;
   }
 
-  /// Ponavlja originalni zahtjev, ali sa novim tokenom u zaglavlju.
+  /// Ponavlja originalni zahtjev sa datim tokenom u zaglavlju (bez interceptora).
   Future<Response<dynamic>> _retryRequest(
     RequestOptions requestOptions,
     String newToken,

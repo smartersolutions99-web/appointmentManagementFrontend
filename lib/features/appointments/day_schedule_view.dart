@@ -11,6 +11,8 @@ import '../../services/notification_service.dart';
 import '../../services/providers.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets.dart';
+import '../customers/customers_provider.dart'
+    show kFrequentNoShowThreshold, kFrequentCancelThreshold;
 import '../employees/employees_provider.dart';
 import '../services/services_provider.dart';
 import 'appointment_form.dart';
@@ -337,6 +339,9 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     );
     if (!ok) return;
 
+    // Upozori ako klijent često ne dolazi/otkazuje.
+    if (!await _warnIfFrequentCanceller(resolved.customerId)) return;
+
     try {
       await ref.read(apiServiceProvider).createAppointment(resolved);
       _clearBoardSelection();
@@ -396,6 +401,9 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
     // Provjeri da li telefon već postoji pod drugim imenom (i pitaj korisnika).
     final resolved = await _resolveCustomerConflict(request);
     if (resolved == null) return; // korisnik otkazao
+
+    // Upozori ako klijent često ne dolazi/otkazuje.
+    if (!await _warnIfFrequentCanceller(resolved.customerId)) return;
 
     try {
       await ref.read(apiServiceProvider).createAppointment(resolved);
@@ -510,6 +518,49 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
       default:
         return null; // otkazano
     }
+  }
+
+  /// Ako je klijent poznat i ČESTO otkazuje/ne dolazi, upozori frizera prije
+  /// zakazivanja. Vraća `true` ako treba nastaviti (ili ako ne možemo provjeriti).
+  Future<bool> _warnIfFrequentCanceller(int? customerId) async {
+    if (customerId == null) return true; // nov klijent — nema istorije
+    CustomerStatsResponse stats;
+    try {
+      stats = await ref.read(apiServiceProvider).getCustomerStats(customerId);
+    } catch (_) {
+      return true; // ne blokiramo ako provjera ne uspije
+    }
+    if (stats.noShow < kFrequentNoShowThreshold &&
+        stats.cancelled < kFrequentCancelThreshold) {
+      return true; // nije rizičan
+    }
+    if (!mounted) return false;
+    final name = (stats.customerName?.trim().isNotEmpty ?? false)
+        ? stats.customerName!.trim()
+        : 'Ovaj klijent';
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded,
+            color: Theme.of(ctx).colorScheme.error),
+        title: const Text('Pažnja — rizičan klijent'),
+        content: Text(
+          '$name često ne dolazi ili otkazuje:\n\n'
+          '• Nije se pojavio: ${stats.noShow}×\n'
+          '• Otkazao: ${stats.cancelled}×\n\n'
+          'Želite li ipak da zakažete termin?',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Odustani')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Zakaži svejedno')),
+        ],
+      ),
+    );
+    return proceed ?? false;
   }
 
   /// Označi izabrane slotove kao pauzu (termin bez klijenta, sa oznakom PAUZA).

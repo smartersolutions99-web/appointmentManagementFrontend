@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../features/appointments/reminders.dart';
 import '../features/update/update_gate.dart';
@@ -45,6 +46,13 @@ const _allItems = <_NavItem>[
 /// Čuvamo ga u provideru da izbor ostane zapamćen dok se krećemo kroz ekrane.
 final railExtendedProvider = StateProvider<bool>((ref) => true);
 
+/// Verzija aplikacije (npr. "1.2.0") — čita se iz same aplikacije i prikazuje
+/// pored naslova (lako se vidi koja je verzija instalirana).
+final appVersionProvider = FutureProvider<String>((ref) async {
+  final info = await PackageInfo.fromPlatform();
+  return info.version;
+});
+
 /// Provjera nadogradnje. Riverpod pokreće ovo JEDNOM i kešira rezultat, pa je
 /// otporno na ponovno građenje widgeta (za razliku od okidača u `initState`).
 final updateCheckProvider = FutureProvider<UpdateInfo?>((ref) async {
@@ -79,6 +87,11 @@ class AppShell extends ConsumerWidget {
 
     final currentTitle = items[selectedIndex].label;
 
+    // Uz naslov pokaži i verziju aplikacije (npr. „Početna · v1.2.0").
+    final version = ref.watch(appVersionProvider).value ?? '';
+    final titleText =
+        version.isEmpty ? currentTitle : '$currentTitle  ·  v$version';
+
     // Nadogradnja: kad provjera stigne i ima novije verzije, prikaži dijalog
     // (samo jednom po pokretanju). Pošto ovo prati provider, radi bez obzira
     // na to koliko se puta AppShell pregradi nakon prijave.
@@ -104,6 +117,15 @@ class AppShell extends ConsumerWidget {
       icon: const Icon(Icons.logout),
       onPressed: () => ref.read(authControllerProvider).logout(),
     );
+
+    // U „support modu" (SUPER_SUPER_ADMIN impersonira salon) iznad sadržaja
+    // stoji jasno obojen baner sa nazivom salona i akcijama.
+    Widget mainBody = RemindersController(child: child);
+    if (auth.impersonating) {
+      mainBody = Column(
+        children: [const _SupportBanner(), Expanded(child: mainBody)],
+      );
+    }
 
     if (isWide) {
       // Da li je bočna traka trenutno proširena (tekst uz ikonice).
@@ -153,10 +175,10 @@ class AppShell extends ConsumerWidget {
             Expanded(
               child: Scaffold(
                 appBar: AppBar(
-                  title: Text(currentTitle),
+                  title: Text(titleText),
                   actions: [logoutButton],
                 ),
-                body: RemindersController(child: child),
+                body: mainBody,
               ),
             ),
           ],
@@ -167,7 +189,7 @@ class AppShell extends ConsumerWidget {
     // Uski ekran (telefon).
     return Scaffold(
       appBar: AppBar(
-        title: Text(currentTitle),
+        title: Text(titleText),
         actions: [logoutButton],
       ),
       drawer: NavigationDrawer(
@@ -186,7 +208,61 @@ class AppShell extends ConsumerWidget {
             ),
         ],
       ),
-      body: RemindersController(child: child),
+      body: mainBody,
+    );
+  }
+}
+
+/// Baner „support moda" (SUPER_SUPER_ADMIN impersonira salon) — jasno drugačija
+/// boja + naziv salona i akcije „Promijeni salon" / „Izađi".
+class _SupportBanner extends ConsumerWidget {
+  const _SupportBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authControllerProvider);
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onTertiary;
+    final where = [
+      if ((auth.supportBusinessName ?? '').isNotEmpty)
+        auth.supportBusinessName!,
+      if ((auth.supportSellingPlaceName ?? '').isNotEmpty)
+        auth.supportSellingPlaceName!,
+    ].join(' › ');
+
+    return Material(
+      color: theme.colorScheme.tertiary,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          child: Row(
+            children: [
+              Icon(Icons.build_circle, size: 18, color: fg),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '🛠️ Podrška — ${where.isEmpty ? 'salon' : where}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+                ),
+              ),
+              TextButton(
+                onPressed: () => context.go(Routes.support),
+                style: TextButton.styleFrom(foregroundColor: fg),
+                child: const Text('Promijeni salon'),
+              ),
+              TextButton(
+                onPressed: () =>
+                    ref.read(authControllerProvider).exitImpersonation(),
+                style: TextButton.styleFrom(foregroundColor: fg),
+                child: const Text('Izađi'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

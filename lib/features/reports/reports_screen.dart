@@ -308,6 +308,16 @@ class ReportsScreen extends ConsumerWidget {
                 const EmptyView(message: 'Nema podataka za ovaj period.')
               else
                 _ServiceTable(services: report.services),
+              const SizedBox(height: 24),
+
+              // Statistika po klijentu (rang liste).
+              Text('Po klijentu',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              if (report.customers.isEmpty)
+                const EmptyView(message: 'Nema podataka za ovaj period.')
+              else
+                _TopCustomers(customers: report.customers),
             ],
           ),
         ),
@@ -948,6 +958,105 @@ class _BarberTable extends StatelessWidget {
         ],
       ],
       boldRows: {report.barbers.length}, // posljednji red = UKUPNO
+    );
+  }
+}
+
+/// Sekcija „Po klijentu": tri rang-liste (najviše dolazi / najviše potrošio /
+/// najviše otkazivao). Svaka pokazuje do 5 klijenata.
+class _TopCustomers extends StatelessWidget {
+  final List<CustomerReport> customers;
+
+  const _TopCustomers({required this.customers});
+
+  List<CustomerReport> _topByInt(int Function(CustomerReport) metric) {
+    final list = customers.where((c) => metric(c) > 0).toList()
+      ..sort((a, b) => metric(b).compareTo(metric(a)));
+    return list.take(5).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final byVisits = _topByInt((c) => c.visits);
+    final byMissed = _topByInt((c) => c.missed);
+    final bySpent = (customers.where((c) => c.spent > 0).toList()
+          ..sort((a, b) => b.spent.compareTo(a.spent)))
+        .take(5)
+        .toList();
+
+    return Column(
+      children: [
+        _rankCard(context, 'Najviše dolazi', Icons.emoji_events_outlined,
+            Colors.green, byVisits, (c) => '${c.visits}'),
+        const SizedBox(height: 8),
+        _rankCard(context, 'Najviše potrošio', Icons.payments_outlined,
+            Colors.blue, bySpent, (c) => Format.money(c.spent)),
+        const SizedBox(height: 8),
+        _rankCard(
+            context,
+            'Najviše otkazivao / nije dolazio',
+            Icons.event_busy_outlined,
+            Colors.red,
+            byMissed,
+            (c) => '${c.missed}'),
+      ],
+    );
+  }
+
+  Widget _rankCard(
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color color,
+    List<CustomerReport> items,
+    String Function(CustomerReport) valueOf,
+  ) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: color),
+                const SizedBox(width: 8),
+                Text(title,
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text('—', style: theme.textTheme.bodySmall),
+              )
+            else
+              for (var i = 0; i < items.length; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        child: Text('${i + 1}.',
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(color: theme.hintColor)),
+                      ),
+                      Expanded(
+                        child: Text(items[i].name,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                      Text(valueOf(items[i]),
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+          ],
+        ),
+      ),
     );
   }
 }

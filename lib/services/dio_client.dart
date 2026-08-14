@@ -3,6 +3,7 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import '../core/config.dart';
 import 'auth_interceptor.dart';
+import 'support_session.dart';
 import 'token_storage.dart';
 
 /// Pravi i podešava Dio HTTP klijent.
@@ -11,8 +12,10 @@ import 'token_storage.dart';
 /// vremenske limite, te kačimo naš [AuthInterceptor] (tokeni + refresh) i
 /// logger koji lijepo ispisuje zahtjeve u konzoli (korisno za učenje/debug).
 Dio buildDioClient(
-  TokenStorage tokenStorage, {
+  TokenStorage tokenStorage,
+  SupportSession supportSession, {
   void Function()? onSessionExpired,
+  void Function()? onImpersonationLost,
 }) {
   final dio = Dio(
     BaseOptions(
@@ -28,7 +31,12 @@ Dio buildDioClient(
 
   // Redoslijed je bitan: prvo auth (dodaje token), pa logger (ispis).
   dio.interceptors.add(
-    AuthInterceptor(tokenStorage, onSessionExpired: onSessionExpired),
+    AuthInterceptor(
+      tokenStorage,
+      supportSession,
+      onSessionExpired: onSessionExpired,
+      onImpersonationLost: onImpersonationLost,
+    ),
   );
 
   dio.interceptors.add(

@@ -18,6 +18,7 @@ import '../features/shifts/shift_assignments_screen.dart';
 import '../features/shifts/shift_templates_screen.dart';
 import '../features/shifts/working_hours_screen.dart';
 import '../features/suppliers/suppliers_screen.dart';
+import '../features/support/salon_picker_screen.dart';
 import '../features/tips/tips_screen.dart';
 import '../services/auth_controller.dart';
 import '../services/providers.dart';
@@ -26,6 +27,7 @@ import 'app_shell.dart';
 /// Sve putanje (rute) na jednom mjestu — da izbjegnemo greške u kucanju.
 class Routes {
   static const login = '/login';
+  static const support = '/support'; // salon-picker za SUPER_SUPER_ADMIN
   static const dashboard = '/';
   static const customers = '/customers';
   static const employees = '/employees';
@@ -70,6 +72,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Prijavljen je, a otišao bi na login → vrati ga na početnu.
       if (!loggedOut && goingToLogin) return Routes.dashboard;
 
+      // SUPER_SUPER_ADMIN (support mode): dok ne uđe u salon → salon-picker.
+      // Kad impersonira, dozvoljen je i admin UI i picker („Promijeni salon").
+      if (auth.isSuperSuperAdmin) {
+        final goingToSupport = state.matchedLocation == Routes.support;
+        if (!auth.impersonating && !goingToSupport) return Routes.support;
+      } else if (state.matchedLocation == Routes.support) {
+        // Obični korisnici nemaju support ekran.
+        return Routes.dashboard;
+      }
+
       // Zaštita stranica koje smije samo administrator.
       // (Radno vrijeme / Šabloni smjena / Dodjela smjena NISU ovdje — zaposleni
       // ih smije otvoriti u režimu „samo pregled".)
@@ -91,6 +103,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Routes.login,
         builder: (context, state) => const LoginScreen(),
+      ),
+
+      // Salon-picker (SUPER_SUPER_ADMIN) — izvan glavnog okvira (nema meni).
+      GoRoute(
+        path: Routes.support,
+        builder: (context, state) => const SalonPickerScreen(),
       ),
 
       // ShellRoute: zajednički okvir (meni + AppBar) oko svih glavnih ekrana.
