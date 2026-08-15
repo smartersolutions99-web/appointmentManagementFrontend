@@ -1309,6 +1309,16 @@ class _DayScheduleViewState extends ConsumerState<DayScheduleView> {
                       ],
                     ),
                   ),
+                  // Ručno osvježavanje rasporeda (povuče svjež raspored sa servera).
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Osvježi',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      _refreshSchedules();
+                      showSnack(context, 'Osvježeno.');
+                    },
+                  ),
                   // Bakšiš za prikazanog barbera — samo u prikazu JEDNOG barbera
                   // (zaposleni koji je ulogovan vidi baš ovaj prikaz; admin kad
                   // gleda pojedinačnog barbera). U „Pregled" prikazu bakšiš je u
